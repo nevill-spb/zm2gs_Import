@@ -1,9 +1,11 @@
-const ExportModule = (function () {
+const Export = (function () {
   const sheet = sheetHelper.GetSheetFromSettings('EXPORT_SHEET');
   if (!sheet) {
     Logger.log("Лист с данными не найден");
     return;
   }
+
+  const HEADERS = Settings.TRANSACTION_FIELDS.map(field => field.title);
 
   // COLUMNS генерируются из TRANSACTION_FIELDS (используем id)
   const COLUMNS = (function() {
@@ -62,7 +64,7 @@ const ExportModule = (function () {
     }
 
     sheet.clearContents();
-    sheet.getRange(1, 1, 1, Settings.EXPORT.HEADERS.length).setValues([Settings.EXPORT.HEADERS]);
+    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
 
     let transactions = json.transaction.filter(t => !t.deleted);
     if (transactions.length === 0) {
@@ -120,7 +122,7 @@ const ExportModule = (function () {
       // Получаем лист для изменений
       const changesSheet = sheetHelper.Get(Settings.SHEETS.CHANGES);
       changesSheet.clearContents();
-      changesSheet.getRange(1, 1, 1, Settings.EXPORT.HEADERS.length).setValues([Settings.EXPORT.HEADERS]);
+      changesSheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
       changesSheet.getRange(1, 1, changesSheet.getMaxRows(), changesSheet.getMaxColumns()).setBackground(null);
 
       const token = zmSettings.getToken().trim();
@@ -159,7 +161,7 @@ const ExportModule = (function () {
       }
 
       // Заголовки для листа изменений
-      const changeHeaders = Settings.EXPORT.HEADERS;
+      const changeHeaders = HEADERS;
       changesSheet.getRange(1, 1, 1, changeHeaders.length).setValues([changeHeaders]);
 
       // Получаем текущие данные с листа с данными
@@ -252,7 +254,7 @@ const ExportModule = (function () {
       if (!sheet) return;
 
       const changesSheet = sheetHelper.Get(Settings.SHEETS.CHANGES);
-      const changeHeaders = Settings.EXPORT.HEADERS;
+      const changeHeaders = HEADERS;
 
       // Получаем все данные с листа изменений
       const changesData = changesSheet.getDataRange().getValues();
@@ -375,13 +377,13 @@ const ExportModule = (function () {
   // Регистрация функций в меню
   const ui = SpreadsheetApp.getUi();
   const subMenu = ui.createMenu("Export")
-    .addItem("Full Export", "ExportModule.DoFullExport")
+    .addItem("Full Export", "Export.DoFullExport")
     .addSeparator()
-    .addItem("Incremental Export", "ExportModule.DoIncrementalExport")
-    .addItem("Prepare Changes Sheet", "ExportModule.PrepareChangesSheet")
-    .addItem("Apply Changes to Data Sheet", "ExportModule.ApplyChangesToDataSheet")
+    .addItem("Incremental Export", "Export.DoIncrementalExport")
+    .addItem("Prepare Changes Sheet", "Export.PrepareChangesSheet")
+    .addItem("Apply Changes to Data Sheet", "Export.ApplyChangesToDataSheet")
     .addSeparator()
-    .addItem("Update Dictionaries", "ExportModule.DoUpdateDictionaries");
+    .addItem("Update Dictionaries", "Export.DoUpdateDictionaries");
   gsMenu.addSubMenu(subMenu);
 
   const o = {};
