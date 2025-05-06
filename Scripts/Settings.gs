@@ -59,11 +59,9 @@ const Settings = {
     { id: "reminderMarker", title: "Маркер напоминания" }
   ],
 
+  ALLOWED_CURRENCY_CODES: ['USD', 'EUR', 'RUB', 'UAH'], // Основные валюты, добавьте свои при желании
+
   EXPORT: {
-    // HEADERS генерируются из TRANSACTION_FIELDS (используем title)
-    get HEADERS() {
-      return Settings.TRANSACTION_FIELDS.map(field => field.title);
-    },
     
     COLORS: {
       NEW: "#d9ead3",     // green
