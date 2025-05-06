@@ -14,7 +14,7 @@
 Для работы используются
 * Скрипт [Settings](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Settings.gs) с настройками остальных скриптов - обязателен
 * Скрипт [Main](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Main.gs) с описанием основных функций по синхронизации данных - обязателен
-* Скрипт [Logs]([Scripts/Logs.gs](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Logs.gs) для логгирования - обязателен
+* Скрипт [Logs](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Logs.gs) для логгирования - обязателен
 * Скрипт [Dictionaries](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Dictionaries.gs) - для операций со словарями. Необходим для экспорта, импорта, и работы со счетами.
 * Скрипт [Export](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Export.gs) - для экспорта транзакций с сервера в Google Таблицы
 * Скрипт [Import](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Import.gs) - для импорта транзакций на сервер из Google Таблиц
