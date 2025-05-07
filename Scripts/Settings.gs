@@ -51,8 +51,8 @@ const Settings = {
     { id: "created", title: "Дата создания" },
     { id: "changed", title: "Дата изменения" },
     { id: "user", title: "Пользователь" },
-    { id: "deleted", title: "Удалено" },
-    { id: "modified", title: "Изменено" }, // для чекбокса, не из API 
+    { id: "deleted", title: "Удалить" },
+    { id: "modified", title: "Изменить" }, // для чекбокса, не из API 
     { id: "viewed", title: "Просмотрено" },
     { id: "hold", title: "Холд" },
     { id: "payee", title: "Получатель" },
@@ -82,6 +82,7 @@ const Settings = {
     { id: "budgetOutcome", title: "В бюджете расходов" },  
     { id: "required", title: "Обязательная" },
     { id: "delete", title: "Удалить" }, // для чекбокса, не из API  
+    { id: "modify", title: "Изменить" }, // для чекбокса, не из API  
     { id: "user", title: "Пользователь" },
     { id: "changed", title: "Дата изменения" },
   ],
@@ -91,7 +92,7 @@ const Settings = {
 
   TAG_MODES: {  
     SINGLE_COLUMN: "Одной строкой",  
-    MULTIPLE_COLUMNS: "Отдельные столбцы"  
+    MULTIPLE_COLUMNS: "Разделить"  
   },
 
   EXPORT: {
