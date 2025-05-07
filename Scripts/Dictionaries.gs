@@ -33,21 +33,19 @@ const Dictionaries = (function () {
   // Сохранение словарей в лист "Справочники"
   function saveDictionariesToSheet() {
     sheet.clearContents();
-
-    // Заголовки
     sheet.getRange(1, 1, 1, 3).setValues([["type", "id", "title"]]);
 
     // Вспомогательная функция для подготовки массива данных словаря
-      // Для instruments фильтруем только id 1,2,3,4  
-      function prepareDictData(type, dict) {  
-        if (type === "instruments") {  
-          const allowedIds = new Set(["1", "2", "3", "4"]);  
-          return Object.entries(dict)  
-            .filter(([id]) => allowedIds.has(id))  
-            .map(([id, title]) => [type, id, title]);  
-        }  
-        return Object.entries(dict).map(([id, title]) => [type, id, title]);  
-      }
+    // Для instruments фильтруем только id 1,2,3,4  
+    const allowedCodes = new Set(Settings.ALLOWED_CURRENCY_CODES);
+    function prepareDictData(type, dict) {  
+      if (type === "instruments") {  
+        return Object.entries(dict)  
+          .filter(([id, title]) => allowedCodes.has(title))  
+          .map(([id, title]) => [type, id, title]);  
+      }  
+      return Object.entries(dict).map(([id, title]) => [type, id, title]);  
+    }
 
     // Собираем все данные в один массив
     const allData = [
@@ -61,6 +59,17 @@ const Dictionaries = (function () {
     if (allData.length > 0) {
       sheet.getRange(2, 1, allData.length, 3).setValues(allData);
     }
+    // Добавляем заголовки словарей в E1-H1  
+    const dictTypes = ["accounts", "tags", "merchants", "instruments"];  
+    const headerRange = sheet.getRange(1, 5, 1, dictTypes.length); // E1:H1  
+    headerRange.setValues([dictTypes]);  
+    
+    // Добавляем формулы фильтрации в E2-H2  
+    const formulas = dictTypes.map(type =>   
+      `=IFERROR(FILTER(INDIRECT("'" & Settings!B8 & "'!C:C");INDIRECT("'" & Settings!B8 & "'!A:A") = "${type}");"Обновите справочники")`  
+    );  
+    const formulaRange = sheet.getRange(2, 5, 1, formulas.length); // E2:H2  
+    formulaRange.setFormulas([formulas]);
   }
 
   // Загрузка словарей из листа "Справочники"
@@ -255,7 +264,5 @@ const Dictionaries = (function () {
     getTagTitle,
     getAllDictionaries,
     getAllReverseDictionaries,
-    //getDefaultUserId,  
-    //getDefaultCurrencyId,
   };
 })();
