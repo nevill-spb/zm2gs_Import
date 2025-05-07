@@ -2,6 +2,7 @@ const Export = (function () {
   const sheet = sheetHelper.GetSheetFromSettings('EXPORT_SHEET');
   if (!sheet) {
     Logger.log("Лист с данными не найден");
+    SpreadsheetApp.getActive().toast('Лист с данными не найден', 'Ошибка');
     return;
   }
 
@@ -75,7 +76,9 @@ const Export = (function () {
   // Обработка данных при полном экспорте
   function prepareFullData(json) {
     if (!json.transaction || !Array.isArray(json.transaction)) {
-      Logger.log("В JSON нет объекта 'transaction' или он некорректный");
+      const msg = "В JSON нет объекта 'transaction' или он некорректный";
+      Logger.log(msg);
+      SpreadsheetApp.getActive().toast(msg, 'Ошибка');
       return;
     }
 
@@ -84,7 +87,9 @@ const Export = (function () {
 
     let transactions = json.transaction.filter(t => !t.deleted);
     if (transactions.length === 0) {
-      Logger.log("Нет доступных транзакций для экспорта");
+      const msg = "Нет доступных транзакций для экспорта";
+      Logger.log(msg);
+      SpreadsheetApp.getActive().toast(msg, 'Информация');
       return;
     }
 
@@ -92,7 +97,7 @@ const Export = (function () {
     transactions.sort((a, b) => {  
       const dateA = new Date(a.date).getTime() || 0;  
       const dateB = new Date(b.date).getTime() || 0;  
-      return dateB - dateA; // по убыванию  
+      return dateB - dateA;
     });
 
     // Обновляем справочники через модуль Dictionaries
@@ -105,19 +110,22 @@ const Export = (function () {
     sheet.getRange(2, 1, data.length, data[0].length).setValues(data);
 
     sheet.getRange(2, COLUMNS.deleted + 1, data.length, 1).insertCheckboxes();  
-    sheet.getRange(2, COLUMNS.modified+1, data.length, 1).insertCheckboxes();  
+    sheet.getRange(2, COLUMNS.modified + 1, data.length, 1).insertCheckboxes();  
     const lastRow = sheet.getMaxRows();
     if (lastRow > data.length + 1) {  
-    sheet.getRange(data.length + 2, COLUMNS.deleted + 1, lastRow - data.length - 1, 1).clearContent().clearDataValidations();  
-    sheet.getRange(data.length + 2, COLUMNS.modified + 1, lastRow - data.length - 1, 1).clearContent().clearDataValidations();  
+      sheet.getRange(data.length + 2, COLUMNS.deleted + 1, lastRow - data.length - 1, 1).clearContent().clearDataValidations();  
+      sheet.getRange(data.length + 2, COLUMNS.modified + 1, lastRow - data.length - 1, 1).clearContent().clearDataValidations();  
     }
 
     Logger.log("Экспорт с расшифровками завершён");
+    SpreadsheetApp.getActive().toast(`Экспорт завершен. Загружено ${data.length} операций.`, 'Экспорт завершен');
   }
 
   // Общая функция для запуска полного экспорта 
   function doFullExport() {
     try {
+      SpreadsheetApp.getActive().toast('Начинаем полный экспорт...', 'Экспорт');
+      
       const requestPayload = ["transaction", "account", "merchant", "instrument", "tag", "user"];
       const json = zmData.RequestForceFetch(requestPayload);
       Logs.logApiCall("FETCH_TRANSACTIONS", requestPayload, JSON.stringify(json));
@@ -126,8 +134,10 @@ const Export = (function () {
         zmSettings.setTimestamp(json.serverTimestamp);
       }
     } catch (error) {
-      Logger.log("Ошибка при экспорте: " + error.toString());
+      const errorMsg = "Ошибка при экспорте: " + error.toString();
+      Logger.log(errorMsg);
       Logs.logApiCall("FETCH_TRANSACTIONS_ERROR", {}, error.toString());
+      SpreadsheetApp.getActive().toast(errorMsg, 'Ошибка');
     }
   }
 
@@ -135,6 +145,8 @@ const Export = (function () {
 
   function prepareChangesSheet() {
     try {
+      SpreadsheetApp.getActive().toast('Получаем изменения с сервера...', 'Подготовка изменений');
+
       // Получаем лист для изменений
       const changesSheet = sheetHelper.Get(Settings.SHEETS.CHANGES);
       changesSheet.clearContents();
@@ -143,7 +155,9 @@ const Export = (function () {
 
       const token = zmSettings.getToken().trim();
       if (!token) {
-        Logger.log("Ошибка: Токен не найден в Settings!B1");
+        const msg = "Ошибка: Токен не найден в Settings!B1";
+        Logger.log(msg);
+        SpreadsheetApp.getActive().toast(msg, 'Ошибка');
         return;
       }
       const lastTimestamp = zmSettings.getTimestamp() || 0;
@@ -156,14 +170,18 @@ const Export = (function () {
 
       Logs.logApiCall("FETCH_DIFF", requestPayload, JSON.stringify(json));
       if (!json || Object.keys(json).length === 0) {
-        Logger.log("Ошибка при получении diff: пустой ответ");
+        const msg = "Ошибка при получении diff: пустой ответ";
+        Logger.log(msg);
+        SpreadsheetApp.getActive().toast(msg, 'Ошибка');
         return;
       }
 
       Dictionaries.loadDictionariesFromSheet()
 
       if (!json.transaction || !Array.isArray(json.transaction)) {
-        Logger.log("В JSON нет объекта 'transaction' или он некорректный");
+        const msg = "В JSON нет объекта 'transaction' или он некорректный";
+        Logger.log(msg);
+        SpreadsheetApp.getActive().toast(msg, 'Ошибка');
         return;
       }
 
@@ -172,7 +190,9 @@ const Export = (function () {
       const activeTransactions = json.transaction.filter(t => !t.deleted);
 
       if (activeTransactions.length === 0 && deletedTransactions.length === 0) {
-        Logger.log("Нет доступных транзакций для обновления");
+        const msg = "Нет доступных транзакций для обновления";
+        Logger.log(msg);
+        SpreadsheetApp.getActive().toast(msg, 'Информация');
         return;
       }
 
@@ -218,11 +238,6 @@ const Export = (function () {
       // Добавляем существующие (изменённые) транзакции
       existingTransactions.forEach(t => {
         changesData.push(formatTransactionForChangesSheet(t));
-        /* if (t.created && (t.created + 300) > lastTimestamp) {  
-          changeTypes.push("Бывшая новая"); // не работает в синхронизациях
-        } else {
-          changeTypes.push("Изменена");
-        }  */
         changeTypes.push("Изменена");
       });
 
@@ -256,11 +271,20 @@ const Export = (function () {
       }
 
       Logger.log(`Подготовлено ${changesData.length} изменений на листе изменений`);
+      SpreadsheetApp.getActive().toast(
+        `Подготовлено изменений: ${changesData.length}\n` +
+        `Новых: ${newTransactions.length}\n` +
+        `Измененных: ${existingTransactions.length}\n` +
+        `Удаленных: ${deletedTransactions.length}`,
+        'Изменения подготовлены'
+      );
 
       if (json.serverTimestamp) newTimestamp = json.serverTimestamp;
 
     } catch (error) {
-      Logger.log("Ошибка при подготовке листа изменений: " + error.toString());
+      const errorMsg = "Ошибка при подготовке листа изменений: " + error.toString();
+      Logger.log(errorMsg);
+      SpreadsheetApp.getActive().toast(errorMsg, 'Ошибка');
     }
   }
 
@@ -275,20 +299,26 @@ const Export = (function () {
       // Получаем все данные с листа изменений
       const changesData = changesSheet.getDataRange().getValues();
       if (changesData.length < 2) {
-        Logger.log("Нет данных для применения изменений");
+        const msg = "Нет данных для применения изменений";
+        Logger.log(msg);
+        SpreadsheetApp.getActive().toast(msg, 'Информация');
         return;
       }
 
       // Получаем текущие данные с листа с данными
       let data = sheet.getDataRange().getValues();
       if (data.length < 2) {
-        Logger.log("Ошибка: нет данных или заголовков в листе данных");
+        const msg = "Ошибка: нет данных или заголовков в листе данных";
+        Logger.log(msg);
+        SpreadsheetApp.getActive().toast(msg, 'Ошибка');
         return;
       }
 
       const idIndex = COLUMNS.id;
       if (idIndex === undefined) {
-        Logger.log("Ошибка: колонка 'id' не найдена в таблице с данными");
+        const msg = "Ошибка: колонка 'id' не найдена в таблице с данными";
+        Logger.log(msg);
+        SpreadsheetApp.getActive().toast(msg, 'Ошибка');
         return;
       }
 
@@ -361,16 +391,31 @@ const Export = (function () {
       }
 
       Logger.log(`Применено изменений: добавлено ${newRows.length}, обновлено ${updatedRows.length}, удалено ${rowsToDelete.length}`);
+      SpreadsheetApp.getActive().toast(
+        `Изменения применены:\n` +
+        `Добавлено: ${newRows.length}\n` +
+        `Обновлено: ${updatedRows.length}\n` +
+        `Удалено: ${rowsToDelete.length}`,
+        'Обновление завершено'
+      );
     } catch (error) {
-      Logger.log("Ошибка при применении изменений: " + error.toString());
+      const errorMsg = "Ошибка при применении изменений: " + error.toString();
+      Logger.log(errorMsg);
+      SpreadsheetApp.getActive().toast(errorMsg, 'Ошибка');
     }
   }
 
   // Инкрементальный экспорт
-  function doIncrementalExport() {  
-    prepareChangesSheet();  
-    applyChangesToDataSheet();
-    if (newTimestamp) zmSettings.setTimestamp(newTimestamp);
+  function doIncrementalExport() {
+    try {
+      prepareChangesSheet();
+      applyChangesToDataSheet();
+      if (newTimestamp) zmSettings.setTimestamp(newTimestamp);
+    } catch (error) {
+      const errorMsg = "Ошибка при инкрементальном экспорте: " + error.toString();
+      Logger.log(errorMsg);
+      SpreadsheetApp.getActive().toast(errorMsg, 'Ошибка');
+    }
   }
 
   // Добавляем обработчик полной синхронизации
