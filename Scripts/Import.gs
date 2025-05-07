@@ -170,16 +170,38 @@ const Import = (function () {
     return id;
   }
 
-  function processTags(tagsString) {
-    if (!tagsString || tagsString === "null") return null;
-    const tagNames = tagsString.split(' | ').map(t => t.trim());
-    return tagNames.map(tag => {
-      const id = DICTIONARIES.tags.get(tag);
-      if (!id) {
-        throw new Error(`Не найден ID для категории "${tag}". Проверьте справочник категорий.`);
-      }
-      return id;
-    });
+  function processTags(row) {  
+    const tagMode = Settings.TagMode; 
+      
+    let tags;  
+    if (tagMode === Settings.TAG_MODES.MULTIPLE_COLUMNS) {  
+      // Режим отдельных столбцов  
+      tags = [  
+        row[COLUMNS.tag],   // Основной тег  
+        row[COLUMNS.tag1],  // Дополнительный тег 1  
+        row[COLUMNS.tag2]   // Дополнительный тег 2  
+      ]  
+      .filter(tag => tag && tag !== "null" && tag.trim() !== "")  
+      .map(tag => tag.trim());  
+    } else {  
+      // Режим одной строки  
+      const tagString = row[COLUMNS.tag];  
+      if (!tagString || tagString === "null" || tagString.trim() === "") return null;  
+      tags = tagString.split(' | ')  
+        .map(t => t.trim())  
+        .filter(t => t.length > 0);  
+    }  
+    
+    if (tags.length === 0) return null;  
+    
+    // Преобразуем названия тегов в ID  
+    return tags.map(tag => {  
+      const id = DICTIONARIES.tags.get(tag);  
+      if (!id) {  
+        throw new Error(`Не найден ID для категории "${tag}". Проверьте справочник категорий.`);  
+      }  
+      return id;  
+    });  
   }
 
   // Создание объекта транзакции из строки данных
@@ -192,7 +214,7 @@ const Import = (function () {
       const transaction = {
         id: id,
         date: parsers.date(row[COLUMNS.date]),
-        tag: processTags(row[COLUMNS.tag]),
+        tag: processTags(row), // поправлено для универсальности кода
         merchant: getMerchantIdSafe(row[COLUMNS.merchant]),
         comment: parsers.value(row[COLUMNS.comment]),
         outcomeAccount: getAccountIdSafe(row[COLUMNS.outcomeAccount]),
@@ -299,7 +321,7 @@ const Import = (function () {
   }
 
   // Универсальная обработка пакета (batch)
-  function processBatch(currentBatch, data, ts, updates, sheet, processedCount, errorCount, errors) {
+  function processBatch(currentBatch, data, ts, updates, sheet, processedCount, errorCount, errors, totalCount) {
     if (currentBatch.length === 0) return { processedCount, errorCount };
     try {
       const result = sendBatch(currentBatch.map(item => item.transaction), ts);
@@ -317,9 +339,9 @@ const Import = (function () {
 
       processedCount += currentBatch.length;
 
-      // Показываем прогресс только после успешной отправки пакета  
-      if (processedCount % Settings.IMPORT.PROGRESS_INTERVAL === 0 || processedCount === data.length - 1) {  
-        showProgress(processedCount, data.length - 1);  
+      // Показываем прогресс только если это не последний пакет
+      if (processedCount < totalCount && processedCount % Settings.IMPORT.PROGRESS_INTERVAL === 0) {  
+        showProgress(processedCount, totalCount);  
       }
 
       if (result && result.serverTimestamp) {
@@ -342,7 +364,7 @@ const Import = (function () {
   }
 
   // Основная функция импорта
-  function DoUpdate() {
+  function doUpdate() {
     try {
       const sheet = sheetHelper.GetSheetFromSettings('IMPORT_SHEET');  
       if (!sheet) throw new Error("Лист импорта не найден");
@@ -350,6 +372,7 @@ const Import = (function () {
       const data = sheet.getDataRange().getValues();
       if (data.length < 2) throw new Error("Нет данных для импорта");
 
+      // Находим строки для импорта и устанавливаем чекбоксы
       const modifiedRowIndices = [];
       for (let i = 1; i < data.length; i++) {
         const row = data[i];
@@ -393,10 +416,15 @@ const Import = (function () {
       );
       if (response !== ui.Button.YES) return;
 
+      // Инициализация переменных для пакетной обработки
       let processedCount = 0;
       let errorCount = 0;
       const errors = [];
       let currentBatch = [];
+      const totalCount = rowsToProcess.length;
+      
+      // Показываем начальный прогресс
+      showProgress(0, totalCount);
 
       // Структура для группировки обновлений по столбцам
       const updates = Object.values(UPDATE_COLUMNS).reduce((acc, { name, column }) => {
@@ -404,18 +432,20 @@ const Import = (function () {
         return acc;
       }, {});
 
+      // Обработка по пакетам
       for (let idx = 0; idx < rowsToProcess.length; idx++) {
         const { row, rowIndex } = rowsToProcess[idx];
         if (!row) {
           Logger.log(`Пустая строка в rowsToProcess на индексе ${rowIndex}`);
           continue;
         }
+
         try {
           const transaction = createTransaction(row, ts);
           validateTransaction(transaction);
           currentBatch.push({ transaction, rowIndex });
 
-          // После импорта. Если строка новая, дописываем поля, если нет - просто снимаем флажок
+          // После импорта. Если строка новая, дописываем поля
           if (!row[COLUMNS.id]) {
             Settings.IMPORT.UPDATE_COLUMNS_LIST.forEach(key => {
               const upperKey = key.toUpperCase();
@@ -426,12 +456,16 @@ const Import = (function () {
                 key === 'changed' ? transaction.changed :
                 Dictionaries.getUserLogin(transaction.user);
             });
-          } else {
-            const isModified = row[COLUMNS.modified] === true || row[COLUMNS.modified] === "TRUE";
-            if (isModified) {
-              updates[UPDATE_COLUMNS.MODIFIED.name].values[rowIndex + 1] = false;
-            }
           }
+
+          // Отправляем пакет, когда он достиг нужного размера
+          if (currentBatch.length >= Settings.IMPORT.BATCH_SIZE) {
+            const res = processBatch(currentBatch, data, ts, updates, sheet, processedCount, errorCount, errors, totalCount);
+            processedCount = res.processedCount;
+            errorCount = res.errorCount;
+            currentBatch = []; // Очищаем текущий пакет
+          }
+
         } catch (error) {
           errorCount++;
           errors.push(`Строка ${rowIndex + 1}: ${error.message}`);
@@ -441,7 +475,7 @@ const Import = (function () {
 
       // Отправляем оставшиеся транзакции
       if (currentBatch.length > 0) {
-        const res = processBatch(currentBatch, data, ts, updates, sheet, processedCount, errorCount, errors);
+        const res = processBatch(currentBatch, data, ts, updates, sheet, processedCount, errorCount, errors, totalCount);
         processedCount = res.processedCount;
         errorCount = res.errorCount;
       }
@@ -533,13 +567,18 @@ const Import = (function () {
     Logger.log(`Создано новых мест: ${newMerchants.length}`);
   }
 
-  // Добавляем пункт меню
-  const ui = SpreadsheetApp.getUi();
-  const subMenu = ui.createMenu("Import")
-    .addItem("Partial Import", 'Import.DoUpdate');
-  gsMenu.addSubMenu(subMenu);
+  // Регистрация функций в меню
+  function createMenu() {
+    const ui = SpreadsheetApp.getUi();
+    const subMenu = ui.createMenu("Import")
+      .addItem("Partial Import", 'Import.doUpdate');
+    gsMenu.addSubMenu(subMenu);
+  }
+
+  // Вызываем создание меню при инициализации модуля
+  createMenu();
 
   return {
-    DoUpdate
+    doUpdate
   };
 })();	
