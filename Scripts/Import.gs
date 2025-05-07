@@ -567,17 +567,6 @@ const Import = (function () {
     Logger.log(`Создано новых мест: ${newMerchants.length}`);
   }
 
-  // Регистрация функций в меню
-  function createMenu() {
-    const ui = SpreadsheetApp.getUi();
-    const subMenu = ui.createMenu("Import")
-      .addItem("Partial Import", 'Import.doUpdate');
-    gsMenu.addSubMenu(subMenu);
-  }
-
-  // Вызываем создание меню при инициализации модуля
-  createMenu();
-
   return {
     doUpdate
   };
