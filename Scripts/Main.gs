@@ -1,6 +1,57 @@
 const fullSyncHandlers = [];
 
-const gsMenu = SpreadsheetApp.getUi()
+function onOpen(e) {  
+  createMenu();  
+}
+
+function createMenu() {  
+  const ui = SpreadsheetApp.getUi();  
+  const mainMenu = ui.createMenu('Zen Money')  
+    .addItem('Full sync', 'doFullSync')  
+    .addItem('Update Dictionaries', 'doUpdateDictionaries')  
+    .addSeparator();  
+  
+  // Проверяем наличие и добавляем подменю для каждого модуля  
+  if (typeof Export !== 'undefined') {  
+    const exportMenu = ui.createMenu("Export")  
+      .addItem("Full Export", "Export.doFullExport")  
+      .addSeparator()  
+      .addItem("Incremental Export", "Export.doIncrementalExport")  
+      .addItem("Prepare Changes Sheet", "Export.prepareChangesSheet")  
+      .addItem("Apply Changes to Data Sheet", "Export.applyChangesToDataSheet");  
+    mainMenu.addSubMenu(exportMenu);  
+  }  
+  
+  if (typeof Import !== 'undefined') {  
+    const importMenu = ui.createMenu("Import")  
+      .addItem("Partial Import", "Import.doUpdate");  
+      
+    if (typeof Tracking !== 'undefined' && Tracking.addTrackingMenuItems) {  
+      Tracking.addTrackingMenuItems(importMenu);  
+    }  
+      
+    mainMenu.addSubMenu(importMenu);  
+  }  
+  
+  if (typeof SetupCategories !== 'undefined') {  
+    const categoriesMenu = ui.createMenu("Setup categories")  
+      .addItem("Load", "SetupCategories.doLoad")  
+      .addItem("Save", "SetupCategories.doSave")  
+      .addItem("Partial", "SetupCategories.doPartial");  
+    mainMenu.addSubMenu(categoriesMenu);  
+  }  
+  
+  if (typeof Validation !== 'undefined') {  
+    const validationMenu = ui.createMenu("Validation")  
+      .addItem("Setup Validation", "Validation.setupValidation")  
+      .addItem("Clear All Validation", "Validation.clearAllValidation");  
+    mainMenu.addSubMenu(validationMenu);  
+  }  
+  
+  mainMenu.addToUi();  
+}
+
+/*const gsMenu = SpreadsheetApp.getUi()
 .createMenu((typeof paramMenuTitleMain !== 'undefined') ? paramMenuTitleMain : 'Zen Money')
 .addItem((typeof paramMenuTitleFullSync !== 'undefined') ? paramMenuTitleFullSync : 'Full sync', 'doFullSync')
 .addItem((typeof paramMenuTitleFullSync !== 'undefined') ? paramMenuTitleFullSync : 'Update Dictionaries', 'doUpdateDictionaries')
@@ -8,7 +59,7 @@ const gsMenu = SpreadsheetApp.getUi()
 
 function onOpen() {
   gsMenu.addToUi();
-}
+}*/
 
 // Полная синхронизация
 function doFullSync() {
