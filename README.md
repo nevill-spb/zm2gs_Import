@@ -19,7 +19,8 @@
 * Скрипт [Export](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Export.gs) - для экспорта транзакций с сервера в Google Таблицы
 * Скрипт [Import](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Import.gs) - для импорта транзакций на сервер из Google Таблиц
 * Скрипт Changes - для автоматического отслеживания измененных транзакций на листе
-* Скрипт Categories - для импорта и экспорта данных по категориям
+* Скрипт [Validation](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Validation.gs) - для валидации значений категорий и счетов на листе
+* Скрипт [Categories](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Categories.gs) - для импорта и экспорта данных по категориям
 * Скрипт Accounts - для импорта и экспорта данных по счетам
 * Скрипт Merchants - для импорта и экспорта данных по местам
 
