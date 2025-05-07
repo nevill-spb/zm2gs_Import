@@ -3,16 +3,31 @@ const fullSyncHandlers = [];
 const gsMenu = SpreadsheetApp.getUi()
 .createMenu((typeof paramMenuTitleMain !== 'undefined') ? paramMenuTitleMain : 'Zen Money')
 .addItem((typeof paramMenuTitleFullSync !== 'undefined') ? paramMenuTitleFullSync : 'Full sync', 'doFullSync')
+.addItem((typeof paramMenuTitleFullSync !== 'undefined') ? paramMenuTitleFullSync : 'Update Dictionaries', 'doUpdateDictionaries')
 .addSeparator();
 
 function onOpen() {
   gsMenu.addToUi();
 }
 
+// Полная синхронизация
 function doFullSync() {
   const json = zmData.RequestData();
 
   fullSyncHandlers.forEach(f => f(json));
+}
+
+// Обновление справочников
+function doUpdateDictionaries() {
+  try {
+    const requestPayload = ["account", "merchant", "instrument", "tag", "user"];
+    const json = zmData.RequestForceFetch(requestPayload);
+    Dictionaries.updateDictionaries(json);
+    Dictionaries.saveDictionariesToSheet();  // Записываем обновлённые словари на лист
+    Logger.log("Справочники обновлены");
+  } catch (error) {
+    Logger.log("Ошибка при обновлении справочников: " + error.toString());
+  }
 }
 
 const sheetHelper = (function () {
