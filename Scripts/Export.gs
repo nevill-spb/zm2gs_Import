@@ -375,7 +375,6 @@ const Export = (function () {
 
   // Добавляем обработчик полной синхронизации
   fullSyncHandlers.push(prepareFullData);
-  fullSyncHandlers.push(doUpdateDictionaries);
 
   // Регистрация функций в меню
   function createMenu() {
