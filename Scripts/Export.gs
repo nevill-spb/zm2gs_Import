@@ -17,36 +17,52 @@ const Export = (function () {
   })();
 
   // Вспомогательная функция для получения значения с расшифровкой по id поля
-  function getDecodedValue(t, field) {
-    switch (field.id) {
-      case "incomeAccount":
-        return Dictionaries.getAccountTitle(t.incomeAccount) || "";
-      case "outcomeAccount":
-        return Dictionaries.getAccountTitle(t.outcomeAccount) || "";
-      case "tag":
-        if (!t.tag) return "";
-        const tagTitles = t.tag.map(tagId => {
-          const title = Dictionaries.getTagTitle(tagId) || "";
-          return title;
-        }).filter(Boolean);
-        return tagTitles.join(" | ");
-      case "user":
-        return Dictionaries.getUserLogin(t.user) || "";
-      case "incomeInstrument":
-        return Dictionaries.getInstrumentShortTitle(t.incomeInstrument) || "";
-      case "outcomeInstrument":
-        return Dictionaries.getInstrumentShortTitle(t.outcomeInstrument) || "";
-      case "merchant":
-        return Dictionaries.getMerchantTitle(t.merchant) || "";
-      case "opIncome":  
-      case "opOutcome":
-        return t[field.id] === 0 ? "" : t[field.id];
-      default:
-        let val = t[field.id];
-        if (val === null) return "";
-        if (typeof val === "object") val = JSON.stringify(val);
-        return val !== undefined ? val : "";
-    }
+  function getDecodedValue(t, field) {  
+    switch (field.id) {  
+      case "tag":  
+      case "tag1":  
+      case "tag2":  
+        if (!t.tag) return "";  
+        const tagTitles = t.tag.map(tagId => {  
+          const title = Dictionaries.getTagTitle(tagId) || "";  
+          return title;  
+        }).filter(Boolean);  
+    
+        const tagMode = Settings.TagMode; 
+          
+        if (tagMode === Settings.TAG_MODES.MULTIPLE_COLUMNS) {  
+          // Режим отдельных столбцов  
+          switch (field.id) {  
+            case "tag": return tagTitles[0] || "";  
+            case "tag1": return tagTitles[1] || "";  
+            case "tag2": return tagTitles[2] || "";  
+            default: return "";  
+          }  
+        } else {  
+          // Режим одной строки  
+          return field.id === "tag" ? tagTitles.join(" | ") : "";  
+        }  
+      case "incomeAccount":  
+        return Dictionaries.getAccountTitle(t.incomeAccount) || "";  
+      case "outcomeAccount":  
+        return Dictionaries.getAccountTitle(t.outcomeAccount) || "";  
+      case "user":  
+        return Dictionaries.getUserLogin(t.user) || "";  
+      case "incomeInstrument":  
+        return Dictionaries.getInstrumentShortTitle(t.incomeInstrument) || "";  
+      case "outcomeInstrument":  
+        return Dictionaries.getInstrumentShortTitle(t.outcomeInstrument) || "";  
+      case "merchant":  
+        return Dictionaries.getMerchantTitle(t.merchant) || "";  
+      case "opIncome":    
+      case "opOutcome":  
+        return t[field.id] === 0 ? "" : t[field.id];  
+      default:  
+        let val = t[field.id];  
+        if (val === null) return "";  
+        if (typeof val === "object") val = JSON.stringify(val);  
+        return val !== undefined ? val : "";  
+    }  
   }
 
   // Вспомогательная функция для форматирования транзакции под лист изменений с учётом порядка столбцов
@@ -375,22 +391,27 @@ const Export = (function () {
   fullSyncHandlers.push(doUpdateDictionaries);
 
   // Регистрация функций в меню
-  const ui = SpreadsheetApp.getUi();
-  const subMenu = ui.createMenu("Export")
-    .addItem("Full Export", "Export.DoFullExport")
-    .addSeparator()
-    .addItem("Incremental Export", "Export.DoIncrementalExport")
-    .addItem("Prepare Changes Sheet", "Export.PrepareChangesSheet")
-    .addItem("Apply Changes to Data Sheet", "Export.ApplyChangesToDataSheet")
-    .addSeparator()
-    .addItem("Update Dictionaries", "Export.DoUpdateDictionaries");
-  gsMenu.addSubMenu(subMenu);
+  function createMenu() {
+    const ui = SpreadsheetApp.getUi();
+    const subMenu = ui.createMenu("Export")
+      .addItem("Full Export", "Export.doFullExport")
+      .addSeparator()
+      .addItem("Incremental Export", "Export.doIncrementalExport")
+      .addItem("Prepare Changes Sheet", "Export.prepareChangesSheet")
+      .addItem("Apply Changes to Data Sheet", "Export.applyChangesToDataSheet")
+      .addSeparator()
+      .addItem("Update Dictionaries", "Export.doUpdateDictionaries");
+    gsMenu.addSubMenu(subMenu);
+  }
 
-  const o = {};
-  o.DoFullExport = doFullExport;
-  o.DoIncrementalExport = doIncrementalExport
-  o.PrepareChangesSheet = prepareChangesSheet;
-  o.ApplyChangesToDataSheet = applyChangesToDataSheet;
-  o.DoUpdateDictionaries = doUpdateDictionaries;
-  return o;
+  // Вызываем создание меню при инициализации модуля
+  createMenu();
+
+  return {
+    doFullExport,
+    doIncrementalExport,
+    prepareChangesSheet,
+    applyChangesToDataSheet,
+    doUpdateDictionaries
+  };
 })();
