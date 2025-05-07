@@ -362,19 +362,6 @@ const SetupCategories = (function () {
   // Добавляем обработчик полной синхронизации
   fullSyncHandlers.push(prepareData);
 
-  // Создание меню
-  function createMenu() {
-    const ui = SpreadsheetApp.getUi();
-    const subMenu = ui.createMenu("Setup categories")
-      .addItem("Load", "SetupCategories.doLoad")
-      .addItem("Save", "SetupCategories.doSave")
-      .addItem("Partial", "SetupCategories.doPartial");
-    gsMenu.addSubMenu(subMenu);
-  }
-
-  // Вызываем создание меню при инициализации модуля
-  createMenu();
-
   return {
     doLoad,
     doSave,
