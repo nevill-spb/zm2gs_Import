@@ -1,67 +1,52 @@
 const Logs = (function () {
-  const LOG_SHEET_NAME = "APILogs";
+  const settingsSheet = sheetHelper.Get(Settings.SHEETS.SETTINGS.NAME);
+  if (!settingsSheet) throw new Error(`Лист "${Settings.SHEETS.SETTINGS.NAME}" не найден`);
+
+  const sheet = sheetHelper.Get(Settings.SHEETS.LOGS);
+  if (!sheet) {
+    Logger.log("Лист для логгирования не найден");
+    return;
+  }
   const HEADERS = ["Timestamp", "Method", "Request Payload", "Response", "Status"];
   const MAX_RESPONSE_LENGTH = 50000;
 
-  function isLoggingEnabled() {  
-    const settingsSheet = sheetHelper.Get(Settings.SHEETS.SETTINGS.NAME);  
-    const logCell = Settings.SHEETS.SETTINGS.CELLS.LOGS;  
-    const value = settingsSheet.getRange(logCell).getValue();  
-    return value === "ДА";  
-  }
-
   // Функция для построения конфигурации фильтрации из листа Settings
-  function buildFilterConfigFromSettings() {
-    const settingsSheet = sheetHelper.Get(Settings.SHEETS.SETTINGS.NAME);
-    if (!settingsSheet) throw new Error(`Лист "${Settings.SHEETS.SETTINGS.NAME}" не найден`);
-    const dictRange = settingsSheet.getRange("D12:D17").getValues().flat();
-    const stateRange = settingsSheet.getRange("E12:E17").getValues().flat();
-    const maxArrayItems = settingsSheet.getRange("E18").getValues().flat();
+  const getFilterConfig = (() => {  
+    let cache = null;  
+    return () => {  
+      if (cache) return cache;  
+  
+      const dictRange = settingsSheet.getRange(Settings.LOG_FILTER.DICT_RANGE).getValues().flat();  
+      const stateRange = settingsSheet.getRange(Settings.LOG_FILTER.STATE_RANGE).getValues().flat();  
+      const maxArrayItems = settingsSheet.getRange(Settings.LOG_FILTER.MAX_ARRAY_ITEMS_CELL).getValue();
+  
+      const excludeRefs = [];  
+      const showCount = [];  
+  
+      dictRange.forEach((dictName, i) => {  
+        if (!dictName) return;  
+        const state = (stateRange[i] || "").trim().toLowerCase();  
+        if (state === "исключить") excludeRefs.push(dictName);  
+        else if (state === "сократить") showCount.push(dictName);  
+      });  
+  
+      cache = {  
+        excludeRefs,  
+        showCount,  
+        maxArrayItems,  
+        excludeNullFields: [  
+          'payee', 'originalPayee', 'opIncome', 'opOutcome',  
+          'opIncomeInstrument', 'opOutcomeInstrument', 'latitude',  
+          'longitude', 'merchant', 'incomeBankID', 'outcomeBankID',  
+          'reminderMarker'  
+        ]  // Значения null этих полей опускаются в логах
+      };  
+      return cache;  
+    };  
+  })();
 
-    const excludeRefs = [];
-    const showCount = [];
-
-    for (let i = 0; i < dictRange.length; i++) {
-      const dictName = dictRange[i];
-      const state = (stateRange[i] || "").trim().toLowerCase();
-
-      if (!dictName) continue;
-
-      if (state === "исключить") {
-        excludeRefs.push(dictName);
-      } else if (state === "сократить") {
-        showCount.push(dictName);
-      }
-      // "отобразить" — ничего не добавляем
-    }
-
-    return {
-      excludeRefs,
-      showCount,
-      maxArrayItems,
-      excludeNullFields: [
-        'payee',
-        'originalPayee',
-        'opIncome',
-        'opOutcome',
-        'opIncomeInstrument',
-        'opOutcomeInstrument',
-        'latitude',
-        'longitude',
-        'merchant',
-        'incomeBankID',
-        'outcomeBankID',
-        'reminderMarker'
-      ]
-    };
-  }
-
-  let FILTER_CONFIG = null;
-  function getFilterConfig() {
-    if (!FILTER_CONFIG) {
-      FILTER_CONFIG = buildFilterConfigFromSettings();
-    }
-    return FILTER_CONFIG;
+  function isLoggingEnabled() {  
+    return sheetHelper.GetCellValue(Settings.SHEETS.SETTINGS.NAME, Settings.SHEETS.SETTINGS.CELLS.LOGS_ENABLED) === "ДА";  
   }
 
   // Кастомный форматтер JSON с переводами строк для массивов объектов
@@ -159,14 +144,12 @@ const Logs = (function () {
     }
   }
 
-  function initLogSheet(sheet) {
-    if (sheet.getLastRow() === 0) {
-      sheet.getRange(1, 1, 1, HEADERS.length)
-        .setValues([HEADERS])
-        .setFontWeight('bold');
-      sheet.getRange("C:D").setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
-      sheet.setFrozenRows(1);
-    }
+  function initLogSheet(sheet) {  
+    if (sheet.getLastRow() === 0) {  
+      sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight('bold');  
+      sheet.getRange("C:D").setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);  
+      sheet.setFrozenRows(1);  
+    }  
   }
   
   function logApiCall(method, requestPayload, responseContent) {
@@ -174,11 +157,10 @@ const Logs = (function () {
       return; // если чекбокс выключен, не логируем  
     }
 
-    const logSheet = sheetHelper.Get(LOG_SHEET_NAME);
-    initLogSheet(logSheet);
+    initLogSheet(sheet);
 
-    logSheet.setColumnWidth(3, 400); // столбец Request Payload
-    logSheet.setColumnWidth(4, 400); // столбец Response
+    sheet.setColumnWidth(3, 400); // столбец Request Payload
+    sheet.setColumnWidth(4, 400); // столбец Response
 
     const formattedRequest = formatJSON(requestPayload);
     let formattedResponse = filterResponse(responseContent);
@@ -187,16 +169,14 @@ const Logs = (function () {
       formattedResponse = formattedResponse.substring(0, MAX_RESPONSE_LENGTH) + "... [truncated]";
     }
 
-    const rowData = [
-      new Date().toISOString(),
-      method,
-      formattedRequest,
-      formattedResponse,
-      getStatus(responseContent)
-    ];
-
-    logSheet.appendRow(rowData);
-    logSheet.autoResizeColumns(1, HEADERS.length);
+    sheet.appendRow([  
+      new Date().toISOString(),  
+      method,  
+      formattedRequest,  
+      formattedResponse,  
+      getStatus(responseContent)  
+    ]);
+    sheet.autoResizeColumns(1, HEADERS.length);
   }
   
   return {
