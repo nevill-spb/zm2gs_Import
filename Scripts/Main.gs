@@ -1,7 +1,7 @@
 const fullSyncHandlers = [];
 
 const gsMenu = SpreadsheetApp.getUi()
-.createMenu((typeof paramMenuTitleMain !== 'undefined') ? paramMenuTitleMain : 'Zenmoney')
+.createMenu((typeof paramMenuTitleMain !== 'undefined') ? paramMenuTitleMain : 'Zen Money')
 .addItem((typeof paramMenuTitleFullSync !== 'undefined') ? paramMenuTitleFullSync : 'Full sync', 'doFullSync')
 .addSeparator();
 
