@@ -14,6 +14,7 @@ function onOpen() {
 function doFullSync() {
   const json = zmData.RequestData();
 
+  doUpdateDictionaries()
   fullSyncHandlers.forEach(f => f(json));
 }
 
