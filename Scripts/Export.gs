@@ -373,19 +373,6 @@ const Export = (function () {
     if (newTimestamp) zmSettings.setTimestamp(newTimestamp);
   }
 
-  // Обновление справочников по кнопке
-  function doUpdateDictionaries() {
-    try {
-      const requestPayload = ["account", "merchant", "instrument", "tag", "user"];
-      const json = zmData.RequestForceFetch(requestPayload);
-      Dictionaries.updateDictionaries(json);
-      Dictionaries.saveDictionariesToSheet();  // Записываем обновлённые словари на лист
-      Logger.log("Справочники обновлены");
-    } catch (error) {
-      Logger.log("Ошибка при обновлении справочников: " + error.toString());
-    }
-  }
-
   // Добавляем обработчик полной синхронизации
   fullSyncHandlers.push(prepareFullData);
   fullSyncHandlers.push(doUpdateDictionaries);
@@ -399,8 +386,6 @@ const Export = (function () {
       .addItem("Incremental Export", "Export.doIncrementalExport")
       .addItem("Prepare Changes Sheet", "Export.prepareChangesSheet")
       .addItem("Apply Changes to Data Sheet", "Export.applyChangesToDataSheet")
-      .addSeparator()
-      .addItem("Update Dictionaries", "Export.doUpdateDictionaries");
     gsMenu.addSubMenu(subMenu);
   }
 
