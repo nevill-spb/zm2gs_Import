@@ -11,17 +11,26 @@ const Settings = {
         TIMESTAMP: "B2",
         DEFAULT_USER_ID: "B3",
         DEFAULT_CURRENCY_ID: "B4",
-        LOGS: "B5",
+        LOGS_ENABLED: "B5",
         EXPORT_SHEET: "B6",  
         IMPORT_SHEET: "B7",  
         DICTIONARIES_SHEET: "B8",  
         TAGS_SHEET: "B9",  
         ACCOUNTS_SHEET: "B10",  
-        MERCHANTS_SHEET: "B11"
+        MERCHANTS_SHEET: "B11",
+        TAG_MODE: "B12"
       }
     },
+    LOGS: "Логи",
     CHANGES: "Изменения",
     ERRORS: "Ошибки импорта",
+  },
+
+  // Фильтры для словарей и их значения
+  LOG_FILTER: {  
+    DICT_RANGE: "D12:D17",  // account, tag, merchant, instrument, user, transaction
+    STATE_RANGE: "E12:E17", // Отобразить, Сократить, Исключить
+    MAX_ARRAY_ITEMS_CELL: "E18"  // Максимальное количество объектов словаря в логах
   },
 
   // Базовая структура колонок в листе данных
@@ -29,6 +38,8 @@ const Settings = {
     { id: "id", title: "ID" },
     { id: "date", title: "Дата" },
     { id: "tag", title: "Категория" },
+    { id: "tag1", title: "Тег1" },
+    { id: "tag2", title: "Тег2" },
     { id: "merchant", title: "Место" },
     { id: "comment", title: "Комментарий" },
     { id: "outcomeAccount", title: "Счёт расход" },
@@ -41,7 +52,7 @@ const Settings = {
     { id: "changed", title: "Дата изменения" },
     { id: "user", title: "Пользователь" },
     { id: "deleted", title: "Удалено" },
-    { id: "modified", title: "Изменено" },
+    { id: "modified", title: "Изменено" }, // для чекбокса, не из API 
     { id: "viewed", title: "Просмотрено" },
     { id: "hold", title: "Холд" },
     { id: "payee", title: "Получатель" },
@@ -56,14 +67,35 @@ const Settings = {
     { id: "outcomeBankID", title: "ID банка расхода" },
     { id: "latitude", title: "Широта" },
     { id: "longitude", title: "Долгота" },
-    { id: "reminderMarker", title: "Маркер напоминания" }
+    { id: "reminderMarker", title: "Маркер напоминания" },
   ],
 
-  ALLOWED_CURRENCY_CODES: ['USD', 'EUR', 'RUB', 'UAH'], // Основные валюты, добавьте свои при желании
+  CATEGORY_FIELDS: [  
+    { id: "id", title: "ID" },  
+    { id: "parent", title: "Parent ID" },  
+    { id: "title", title: "Название" },  
+    { id: "color", title: "Цвет" },  
+    { id: "icon", title: "Иконка" },  
+    { id: "showIncome", title: "В доходе" },  
+    { id: "showOutcome", title: "В расходе" },  
+    { id: "budgetIncome", title: "В бюджете доходов" },  
+    { id: "budgetOutcome", title: "В бюджете расходов" },  
+    { id: "required", title: "Обязательная" },
+    { id: "delete", title: "Удалить" }, // для чекбокса, не из API  
+    { id: "user", title: "Пользователь" },
+    { id: "changed", title: "Дата изменения" },
+  ],
+
+  // Основные валюты, добавьте свои при желании
+  ALLOWED_CURRENCY_CODES: ['USD', 'EUR', 'RUB', 'UAH'], 
+
+  TAG_MODES: {  
+    SINGLE_COLUMN: "Одной строкой",  
+    MULTIPLE_COLUMNS: "Отдельные столбцы"  
+  },
 
   EXPORT: {
-    
-    COLORS: {
+      COLORS: {
       NEW: "#d9ead3",     // green
       WAS_NEW: "#e6ffe1",   // jade (логика временно отключена)
       MODIFIED: "#fff2cc", // yellow
@@ -78,7 +110,7 @@ const Settings = {
     UPDATE_COLUMNS_LIST: ['id', 'deleted', 'modified', 'created', 'changed', 'user'],
   },
 
-  get DefaultUserId() {  
+  get DefaultUserId() { 
     const userName = sheetHelper.GetCellValue(this.SHEETS.SETTINGS.NAME, this.SHEETS.SETTINGS.CELLS.DEFAULT_USER_ID);  
     if (!userName || userName.trim() === "") {  
       throw new Error("Имя пользователя в настройках не задано");  
@@ -90,7 +122,7 @@ const Settings = {
     return Number(userId);
   },  
   
-  get DefaultCurrencyId() {  
+  get DefaultCurrencyId() { 
     const currencyShortTitle = sheetHelper.GetCellValue(this.SHEETS.SETTINGS.NAME, this.SHEETS.SETTINGS.CELLS.DEFAULT_CURRENCY_ID);  
     if (!currencyShortTitle || currencyShortTitle.trim() === "") {  
       throw new Error("Валюта в настройках не задана");  
@@ -101,5 +133,12 @@ const Settings = {
     }  
     return Number(currencyId);
   },
+
+  get TagMode() {  
+    const tagMode = sheetHelper.GetCellValue(this.SHEETS.SETTINGS.NAME, this.SHEETS.SETTINGS.CELLS.TAG_MODE);  
+    return tagMode === this.TAG_MODES.MULTIPLE_COLUMNS ?   
+      this.TAG_MODES.MULTIPLE_COLUMNS :   
+      this.TAG_MODES.SINGLE_COLUMN;  
+  }
 
 };
