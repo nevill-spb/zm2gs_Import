@@ -52,7 +52,10 @@ const SetupCategories = (function () {
 
   // Подготовка данных категорий для записи в лист
   function prepareData(json) {
-    if (!('tag' in json)) return;
+    if (!('tag' in json)) {  
+          SpreadsheetApp.getActive().toast('Нет данных о категориях', 'Предупреждение');  
+          return;  
+    }
 
     // Сортируем категории по названию и id для стабильности
     const sortedTags = json.tag.slice().sort((a, b) => {
@@ -80,6 +83,7 @@ const SetupCategories = (function () {
     });
 
     writeDataToSheet(data);
+    SpreadsheetApp.getActive().toast(`Загружено ${data.length} категорий`, 'Информация');
   }
 
   // Запись данных в лист
@@ -203,86 +207,117 @@ const SetupCategories = (function () {
 
   // Обновление категорий
   function updateTags(values, isPartial = false) {
-    const json = zmData.RequestForceFetch(['tag']);
-    const tags = json['tag'] || [];
-    const ts = Math.floor(Date.now() / 1000);
+      try {
+          const json = zmData.RequestForceFetch(['tag']);
+          const tags = json['tag'] || [];
+          const ts = Math.floor(Date.now() / 1000);
 
-    const newTags = [];
-    const deletionRequests = [];
-    const idMap = {};
-    const newIds = Array(values.length).fill(null);
+          const newTags = [];
+          const deletionRequests = [];
+          const deletedTitles = []; // Массив для хранения названий удаляемых категорий
+          const idMap = {};
+          const newIds = Array(values.length).fill(null);
 
-    // Первый проход: определяем новые ID
-    for (let i = 0; i < values.length; i++) {
-      const row = values[i];
-      if (isPartial && !row[fieldIndex.modify]) continue;
+          // Первый проход: определяем новые ID
+          for (let i = 0; i < values.length; i++) {
+              const row = values[i];
+              if (isPartial && !row[fieldIndex.modify]) continue;
 
-      const oldTagId = row[fieldIndex.id];
-      const title = row[fieldIndex.title];
-      if (!title || typeof title !== 'string' || title.trim() === '') continue;
+              const oldTagId = row[fieldIndex.id];
+              const title = row[fieldIndex.title];
+              if (!title || typeof title !== 'string' || title.trim() === '') continue;
 
-      if (!oldTagId || !tags.find(t => t.id === oldTagId)) {
-        const newId = Utilities.getUuid().toLowerCase();
-        idMap[oldTagId || `new_${i}`] = newId;
-        newIds[i] = newId;
-      } else {
-        idMap[oldTagId] = oldTagId;
-      }
-    }
-
-    // Обновляем ID в таблице
-    if (newIds.some(id => id !== null)) {
-      const idColumnRange = sheet.getRange(2, fieldIndex.id + 1, values.length, 1);
-      const idColumnValues = idColumnRange.getValues();
-      for (let i = 0; i < values.length; i++) {
-        if (newIds[i]) idColumnValues[i][0] = newIds[i];
-      }
-      idColumnRange.setValues(idColumnValues);
-    }
-
-    // Второй проход: создаем/обновляем теги
-    for (let i = 0; i < values.length; i++) {
-      const row = values[i];
-      if (isPartial && !row[fieldIndex.modify]) continue;
-
-      const result = createTagFromRow(row, i, ts, tags, idMap);
-      if (!result) continue;
-
-      if (result.deletion) {
-        deletionRequests.push(result.deletion);
-      } else if (result.tag) {
-        newTags.push(result.tag);
-      }
-    }
-
-    // Отправляем изменения на сервер
-    if (newTags.length > 0 || deletionRequests.length > 0) {
-      const data = {
-        currentClientTimestamp: ts,
-        serverTimestamp: ts
-      };
-
-      if (newTags.length > 0) data.tag = newTags;
-      if (deletionRequests.length > 0) data.deletion = deletionRequests;
-
-      const result = zmData.Request(data);
-      Logs.logApiCall("Update Tags", data, result);
-      Logger.log(`Результат ${isPartial ? 'частичного' : 'полного'} обновления категорий: ${JSON.stringify(result)}`);
-
-      // Сбрасываем флаги modify после успешного обновления
-      if (isPartial) {
-        const modifyColumn = fieldIndex.modify + 1;
-        for (let i = 0; i < values.length; i++) {
-          if (values[i][fieldIndex.modify] === true) {
-            sheet.getRange(i + 2, modifyColumn).setValue(false);
+              if (!oldTagId || !tags.find(t => t.id === oldTagId)) {
+                  const newId = Utilities.getUuid().toLowerCase();
+                  idMap[oldTagId || `new_${i}`] = newId;
+                  newIds[i] = newId;
+              } else {
+                  idMap[oldTagId] = oldTagId;
+              }
           }
-        }
-      }
 
-      doLoad();
-    } else {
-      Logger.log("Нет изменений для обработки");
-    }
+          // Обновляем ID в таблице
+          if (newIds.some(id => id !== null)) {
+              const idColumnRange = sheet.getRange(2, fieldIndex.id + 1, values.length, 1);
+              const idColumnValues = idColumnRange.getValues();
+              for (let i = 0; i < values.length; i++) {
+                  if (newIds[i]) idColumnValues[i][0] = newIds[i];
+              }
+              idColumnRange.setValues(idColumnValues);
+          }
+
+          // Второй проход: создаем/обновляем теги
+          for (let i = 0; i < values.length; i++) {
+              const row = values[i];
+              if (isPartial && !row[fieldIndex.modify]) continue;
+
+              const result = createTagFromRow(row, i, ts, tags, idMap);
+              if (!result) continue;
+
+              if (result.deletion) {
+                  deletionRequests.push(result.deletion);
+                  // Сохраняем название удаляемой категории
+                  const title = row[fieldIndex.title];
+                  if (title) deletedTitles.push(title);
+              } else if (result.tag) {
+                  newTags.push(result.tag);
+              }
+          }
+
+          // Отправляем изменения на сервер
+          if (newTags.length > 0 || deletionRequests.length > 0) {
+              // Показываем предупреждение, если есть удаляемые категории
+              if (deletedTitles.length > 0) {
+                  const deletionMsg = deletedTitles.length === 1 
+                      ? `Будет удалена категория: ${deletedTitles[0]}`
+                      : `Будут удалены категории:\n${deletedTitles.slice(0, 5).join('\n')}${
+                          deletedTitles.length > 5 ? `\n...и еще ${deletedTitles.length - 5}` : ''
+                      }`;
+                  SpreadsheetApp.getActive().toast(deletionMsg, 'Удаление категорий');
+                  // Небольшая пауза, чтобы пользователь успел увидеть сообщение
+                  Utilities.sleep(2000);
+              }
+
+              const data = {
+                  currentClientTimestamp: ts,
+                  serverTimestamp: ts
+              };
+
+              if (newTags.length > 0) data.tag = newTags;
+              if (deletionRequests.length > 0) data.deletion = deletionRequests;
+
+              SpreadsheetApp.getActive().toast('Отправляем изменения на сервер...', 'Обновление');
+              const result = zmData.Request(data);
+              Logs.logApiCall("Update Tags", data, result);
+              Logger.log(`Результат ${isPartial ? 'частичного' : 'полного'} обновления категорий: ${JSON.stringify(result)}`);
+
+              // Показываем итоговое сообщение
+              SpreadsheetApp.getActive().toast(
+                  `Обновление завершено:\n` +
+                  `Новых/измененных: ${newTags.length}\n` +
+                  `Удалено: ${deletionRequests.length}`,
+                  'Успех'
+              );
+
+              // Сбрасываем флаги modify после успешного обновления
+              if (isPartial) {
+                  const modifyColumn = fieldIndex.modify + 1;
+                  for (let i = 0; i < values.length; i++) {
+                      if (values[i][fieldIndex.modify] === true) {
+                          sheet.getRange(i + 2, modifyColumn).setValue(false);
+                      }
+                  }
+              }
+
+              doLoad();
+          } else {
+              SpreadsheetApp.getActive().toast('Нет изменений для обработки', 'Информация');
+          }
+      } catch (error) {
+          const errorMsg = `Ошибка при обновлении категорий: ${error.toString()}`;
+          Logger.log(errorMsg);
+          SpreadsheetApp.getActive().toast(errorMsg, 'Ошибка');
+      }
   }
 
   // Загрузка категорий
@@ -295,11 +330,14 @@ const SetupCategories = (function () {
   // Полное обновление категорий
   function doSave() {
     const lastRow = sheet.getLastRow();
-    if (lastRow < 2) {
-      Logger.log("Нет данных для обновления категорий");
-      return;
+    if (lastRow < 2) {  
+      const msg = "Нет данных для обновления категорий";  
+      Logger.log(msg);  
+      SpreadsheetApp.getActive().toast(msg, 'Предупреждение');  
+      return;  
     }
 
+    SpreadsheetApp.getActive().toast('Начинаем полное обновление категорий...', 'Обновление');
     Dictionaries.loadDictionariesFromSheet();
     const values = sheet.getRange(2, 1, lastRow - 1, Settings.CATEGORY_FIELDS.length).getValues();
     updateTags(values, false);
@@ -308,11 +346,14 @@ const SetupCategories = (function () {
   // Частичное обновление категорий
   function doPartial() {
     const lastRow = sheet.getLastRow();
-    if (lastRow < 2) {
-      Logger.log("Нет данных для обновления категорий");
-      return;
+    if (lastRow < 2) {  
+      const msg = "Нет данных для обновления категорий";  
+      Logger.log(msg);  
+      SpreadsheetApp.getActive().toast(msg, 'Предупреждение');  
+      return;  
     }
 
+    SpreadsheetApp.getActive().toast('Начинаем частичное обновление категорий...', 'Обновление');
     Dictionaries.loadDictionariesFromSheet();
     const values = sheet.getRange(2, 1, lastRow - 1, Settings.CATEGORY_FIELDS.length).getValues();
     updateTags(values, true);
@@ -327,7 +368,7 @@ const SetupCategories = (function () {
     const subMenu = ui.createMenu("Setup categories")
       .addItem("Load", "SetupCategories.doLoad")
       .addItem("Save", "SetupCategories.doSave")
-      .addItem("Partial Update", "SetupCategories.doPartial");
+      .addItem("Partial", "SetupCategories.doPartial");
     gsMenu.addSubMenu(subMenu);
   }
 
