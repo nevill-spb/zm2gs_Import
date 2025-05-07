@@ -118,7 +118,7 @@ const Export = (function () {
     }
 
     Logger.log("Экспорт с расшифровками завершён");
-    SpreadsheetApp.getActive().toast(`Экспорт завершен. Загружено ${data.length} операций.`, 'Экспорт завершен');
+    SpreadsheetApp.getActive().toast(`Загружено ${data.length} операций.`, 'Экспорт завершен');
   }
 
   // Общая функция для запуска полного экспорта 
@@ -420,21 +420,6 @@ const Export = (function () {
 
   // Добавляем обработчик полной синхронизации
   fullSyncHandlers.push(prepareFullData);
-
-  // Регистрация функций в меню
-  function createMenu() {
-    const ui = SpreadsheetApp.getUi();
-    const subMenu = ui.createMenu("Export")
-      .addItem("Full Export", "Export.doFullExport")
-      .addSeparator()
-      .addItem("Incremental Export", "Export.doIncrementalExport")
-      .addItem("Prepare Changes Sheet", "Export.prepareChangesSheet")
-      .addItem("Apply Changes to Data Sheet", "Export.applyChangesToDataSheet")
-    gsMenu.addSubMenu(subMenu);
-  }
-
-  // Вызываем создание меню при инициализации модуля
-  createMenu();
 
   return {
     doFullExport,
