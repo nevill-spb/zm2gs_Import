@@ -1,185 +1,268 @@
-const Logs = (function () {
-  const settingsSheet = sheetHelper.Get(Settings.SHEETS.SETTINGS.NAME);
-  if (!settingsSheet) throw new Error(`Лист "${Settings.SHEETS.SETTINGS.NAME}" не найден`);
-
-  const sheet = sheetHelper.Get(Settings.SHEETS.LOGS);
+const Dictionaries = (function () {
+  const sheet = sheetHelper.GetSheetFromSettings('DICTIONARIES_SHEET');
   if (!sheet) {
-    Logger.log("Лист для логгирования не найден");
+    Logger.log("Лист справочников не найден");
     return;
   }
-  const HEADERS = ["Timestamp", "Method", "Request Payload", "Response", "Status"];
-  const MAX_RESPONSE_LENGTH = 50000;
 
-  // Функция для построения конфигурации фильтрации из листа Settings
-  const getFilterConfig = (() => {  
-    let cache = null;  
-    return () => {  
-      if (cache) return cache;  
-  
-      const dictRange = settingsSheet.getRange(Settings.LOG_FILTER.DICT_RANGE).getValues().flat();  
-      const stateRange = settingsSheet.getRange(Settings.LOG_FILTER.STATE_RANGE).getValues().flat();  
-      const maxArrayItems = settingsSheet.getRange(Settings.LOG_FILTER.MAX_ARRAY_ITEMS_CELL).getValue();
-  
-      const excludeRefs = [];  
-      const showCount = [];  
-  
-      dictRange.forEach((dictName, i) => {  
-        if (!dictName) return;  
-        const state = (stateRange[i] || "").trim().toLowerCase();  
-        if (state === "исключить") excludeRefs.push(dictName);  
-        else if (state === "сократить") showCount.push(dictName);  
-      });  
-  
-      cache = {  
-        excludeRefs,  
-        showCount,  
-        maxArrayItems,  
-        excludeNullFields: [  
-          'payee', 'originalPayee', 'opIncome', 'opOutcome',  
-          'opIncomeInstrument', 'opOutcomeInstrument', 'latitude',  
-          'longitude', 'merchant', 'incomeBankID', 'outcomeBankID',  
-          'reminderMarker'  
-        ]  // Значения null этих полей опускаются в логах
-      };  
-      return cache;  
-    };  
-  })();
+  // Внутренние объекты словарей
+  let accounts = {};
+  let merchants = {};
+  let instruments = {};
+  let users = {};
+  let tags = {};
 
-  function isLoggingEnabled() {  
-    return sheetHelper.GetCellValue(Settings.SHEETS.SETTINGS.NAME, Settings.SHEETS.SETTINGS.CELLS.LOGS_ENABLED) === "ДА";  
-  }
+  // Обратные словари для быстрого поиска ID по названию
+  let accountsRev = {};
+  let merchantsRev = {};
+  let instrumentsRev = {};
+  let usersRev = {};
+  let tagsRev = {};
 
-  // Кастомный форматтер JSON с переводами строк для массивов объектов
-  function customJSONStringify(obj, indent = 2) {
-    const filterConfig = getFilterConfig();
-    return JSON.stringify(obj, function (key, value) {
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        const filtered = {};
-        for (let k in value) {
-          if (filterConfig.excludeNullFields.includes(k) && value[k] === null) {
-            continue;
-          }
-          filtered[k] = value[k];
-        }
-        return filtered;
+  // Обновление обратных словарей
+  function invertDictionary(dict) {
+    const rev = {};
+    for (const key in dict) {
+      if (dict.hasOwnProperty(key)) {
+        rev[dict[key]] = key;
       }
-      return value;
-    }, indent).replace(/},\s*{/g, '},\n{');
+    }
+    return rev;
   }
 
-  // Фильтрация и форматирование ответа
-  function filterResponse(response) {
+  // Сохранение словарей в лист "Справочники"
+  function saveDictionariesToSheet() {
+    sheet.clearContents();
+    sheet.getRange(1, 1, 1, 3).setValues([["type", "id", "title"]]);
+
+    // Вспомогательная функция для подготовки массива данных словаря
+    // Для instruments фильтруем только id 1,2,3,4  
+    const allowedCodes = new Set(Settings.ALLOWED_CURRENCY_CODES);
+    function prepareDictData(type, dict) {  
+      if (type === "instruments") {  
+        return Object.entries(dict)  
+          .filter(([id, title]) => allowedCodes.has(title))  
+          .map(([id, title]) => [type, id, title]);  
+      }  
+      return Object.entries(dict).map(([id, title]) => [type, id, title]);  
+    }
+
+    // Собираем все данные в один массив
+    const allData = [
+      ...prepareDictData("accounts", accounts),
+      ...prepareDictData("merchants", merchants),
+      ...prepareDictData("instruments", instruments),
+      ...prepareDictData("users", users),
+      ...prepareDictData("tags", tags)
+    ];
+
+    if (allData.length > 0) {
+      sheet.getRange(2, 1, allData.length, 3).setValues(allData);
+    }
+    // Добавляем заголовки словарей в E1-H1  
+    const dictTypes = ["accounts", "tags", "merchants", "instruments"];  
+    const headerRange = sheet.getRange(1, 5, 1, dictTypes.length); // E1:H1  
+    headerRange.setValues([dictTypes]);  
+    
+    // Добавляем формулы фильтрации в E2-H2  
+    const formulas = dictTypes.map(type =>   
+      `=IFERROR(FILTER(INDIRECT("'" & Settings!B8 & "'!C:C");INDIRECT("'" & Settings!B8 & "'!A:A") = "${type}");"Обновите справочники")`  
+    );  
+    const formulaRange = sheet.getRange(2, 5, 1, formulas.length); // E2:H2  
+    formulaRange.setFormulas([formulas]);
+  }
+
+  // Загрузка словарей из листа "Справочники"
+  function loadDictionariesFromSheet() {
     try {
-      const filterConfig = getFilterConfig();
-      const responseObj = typeof response === "string"
-        ? JSON.parse(response)
-        : response;
+      const data = sheet.getDataRange().getValues();
 
-      const filteredResponse = {};
+      // Предполагается, что в листе есть заголовки и данные в формате Тип, ID, Название
+      // Собираем словари по типу
+      accounts = {};
+      merchants = {};
+      instruments = {};
+      users = {};
+      tags = {};
 
-      Object.keys(responseObj).forEach(key => {
-        if (filterConfig.excludeRefs.includes(key)) return;
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        const type = row[0];
+        const id = String(row[1]);
+        const title = String(row[2]);
+        if (!type || !id || !title) continue;
 
-        if (key === 'transaction' && Array.isArray(responseObj[key])) {
-          filteredResponse[key] = responseObj[key].filter(tag => !tag.deleted);
-          if (filterConfig.showCount.includes(key)) {
-            filteredResponse[key] = `[${filteredResponse[key].length} items]`;
-          } else if (filteredResponse[key].length > filterConfig.maxArrayItems) {
-            filteredResponse[key] = [
-              ...filteredResponse[key].slice(0, filterConfig.maxArrayItems),
-              `... and ${filteredResponse[key].length - filterConfig.maxArrayItems} more`
-            ];
-          }
-        } else if (filterConfig.showCount.includes(key) && Array.isArray(responseObj[key])) {
-          filteredResponse[key] = `[${responseObj[key].length} items]`;
-        } else if (Array.isArray(responseObj[key])) {
-          if (responseObj[key].length > filterConfig.maxArrayItems) {
-            filteredResponse[key] = [
-              ...responseObj[key].slice(0, filterConfig.maxArrayItems),
-              `... and ${responseObj[key].length - filterConfig.maxArrayItems} more`
-            ];
-          } else {
-            filteredResponse[key] = responseObj[key];
-          }
-        } else {
-          filteredResponse[key] = responseObj[key];
+        switch (type.toLowerCase()) {
+          case "accounts":
+            accounts[id] = title;
+            break;
+          case "merchants":
+            merchants[id] = title;
+            break;
+          case "instruments":
+            instruments[id] = title;
+            break;
+          case "users":
+            users[id] = title;
+            break;
+          case "tags":
+            tags[id] = title;
+            break;
+          default:
+            // Игнорируем неизвестные типы
+            break;
         }
+      }
+
+      // Создаём обратные словари
+      updateReverseDictionaries();
+
+      return getAllDictionaries();  
+      } catch (e) {  
+        Logger.log("Ошибка загрузки справочников: " + e.message);  
+        return null;  
+      }
+    }
+
+  // Обновление словарей из JSON (например, с API)
+  function updateDictionaries(json) {
+    if (!json) return;
+
+    if (json.account) {
+      accounts = {};
+      json.account.forEach(item => {
+        if (item.id && item.title) accounts[item.id] = item.title;
+      });
+    }
+
+    if (json.merchant) {
+      merchants = {};
+      json.merchant.forEach(item => {
+        if (item.id && item.title) merchants[item.id] = item.title;
+      });
+    }
+
+    if (json.instrument) {
+      instruments = {};
+      json.instrument.forEach(item => {
+        if (item.id && item.shortTitle) instruments[item.id] = item.shortTitle;
+      });
+    }
+
+    if (json.user) {
+      users = {};
+      json.user.forEach(item => {
+        if (item.id && item.login) users[item.id] = item.login;
+      });    }
+
+    if (json.tag) {
+      const tagObjects = {};
+      json.tag.forEach(({id, title, parent}) => {
+        if (id && title) tagObjects[id] = {title, parent: parent || null};
       });
 
-      return customJSONStringify(filteredResponse, 2);
-    } catch (e) {
-      return typeof response === "string" ? response : JSON.stringify(response);
+      const buildTagPath = (id) => {
+        const tag = tagObjects[id];
+        if (!tag) return "";
+        return tag.parent ? buildTagPath(tag.parent) + " / " + tag.title : tag.title;
+      };
+
+      tags = Object.fromEntries(
+        Object.keys(tagObjects).map(id => [id, buildTagPath(id)])
+      );
     }
+    updateReverseDictionaries();  
+    return getAllDictionaries();
   }
 
-  function formatJSON(data) {
-    if (typeof data === "string") {
-      try {
-        return JSON.stringify(JSON.parse(data), null, 2);
-      } catch (e) {
-        return data;
-      }
-    }
-    return JSON.stringify(data, null, 2);
+  // Обновление обратных словарей из JSON
+  function updateReverseDictionaries() {
+    accountsRev = invertDictionary(accounts);
+    merchantsRev = invertDictionary(merchants);
+    instrumentsRev = invertDictionary(instruments);
+    usersRev = invertDictionary(users);
+    tagsRev = invertDictionary(tags);
   }
 
-  function getStatus(response) {
-    try {
-      const responseObj = typeof response === "string"
-        ? JSON.parse(response)
-        : response;
-
-      if (responseObj.error) {
-        return "Error";
-      }
-
-      const keys = Object.keys(responseObj);
-      if (keys.length === 0 || (keys.length === 1 && keys[0] === "serverTimestamp")) {
-        return "Empty Response";
-      }
-
-      return "Success";
-    } catch (e) {
-      return "Error";
-    }
+  // Получение ID по названию
+  function getAccountId(title) {
+    return accountsRev[title] || null;
   }
 
-  function initLogSheet(sheet) {  
-    if (sheet.getLastRow() === 0) {  
-      sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight('bold');  
-      sheet.getRange("C:D").setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);  
-      sheet.setFrozenRows(1);  
-    }  
+  function getMerchantId(title) {
+    return merchantsRev[title] || null;
   }
-  
-  function logApiCall(method, requestPayload, responseContent) {
-    if (!isLoggingEnabled()) {  
-      return; // если чекбокс выключен, не логируем  
-    }
 
-    initLogSheet(sheet);
-
-    sheet.setColumnWidth(3, 400); // столбец Request Payload
-    sheet.setColumnWidth(4, 400); // столбец Response
-
-    const formattedRequest = formatJSON(requestPayload);
-    let formattedResponse = filterResponse(responseContent);
-
-    if (formattedResponse.length > MAX_RESPONSE_LENGTH) {
-      formattedResponse = formattedResponse.substring(0, MAX_RESPONSE_LENGTH) + "... [truncated]";
-    }
-
-    sheet.appendRow([  
-      new Date().toISOString(),  
-      method,  
-      formattedRequest,  
-      formattedResponse,  
-      getStatus(responseContent)  
-    ]);
-    sheet.autoResizeColumns(1, HEADERS.length);
+  function getInstrumentId(title) {
+    return instrumentsRev[title] || null;
   }
-  
+
+  function getUserId(login) {
+    return usersRev[login] || null;
+  }
+
+  function getTagId(title) {
+    return tagsRev[title] || null;
+  }
+
+  // Получение названия по ID
+  function getAccountTitle(id) {
+    return accounts[id] || null;
+  }
+
+  function getMerchantTitle(id) {
+    return merchants[id] || null;
+  }
+
+  function getInstrumentShortTitle(id) {
+    return instruments[id] || null;
+  }
+
+  function getUserLogin(id) {
+    return users[id] || null;
+  }
+
+  function getTagTitle(id) {
+    return tags[id] || null;
+  }
+
+  // Возвращает все словари (для загрузки в Import.DICTIONARIES)
+  function getAllDictionaries() {
+    return {
+      accounts,
+      merchants,
+      instruments,
+      users,
+      tags
+    };
+  }
+
+  // Возвращает все обратные словари (для загрузки в Import.DICTIONARIES)
+  function getAllReverseDictionaries () {  
+    return {  
+      accountsRev,  
+      merchantsRev,  
+      instrumentsRev,  
+      usersRev,  
+      tagsRev  
+    };  
+  }
+
   return {
-    logApiCall
+    updateDictionaries,
+    saveDictionariesToSheet,
+    loadDictionariesFromSheet,
+    getUserId,
+    getInstrumentId,
+    getAccountId,
+    getMerchantId,
+    getTagId,
+    getUserLogin,
+    getInstrumentShortTitle,
+    getAccountTitle,
+    getMerchantTitle,
+    getTagTitle,
+    getAllDictionaries,
+    getAllReverseDictionaries,
   };
 })();
