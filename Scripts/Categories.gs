@@ -1,5 +1,10 @@
-const SetupCategories = (function () {
-  const sheet = sheetHelper.GetSheetFromSettings('TAGS_SHEET');
+const Categories = (function () {
+  const sheet = sheetHelper.GetSheetFromSettings('TAGS_SHEET'); 
+  if (!sheet) {
+    Logger.log("Лист с категориями не найден");
+    SpreadsheetApp.getActive().toast('Лист с категориями не найден', 'Ошибка');
+    return;
+  }
 
   // Парсеры для булевых значений
   function parseBool(value) {
@@ -288,9 +293,10 @@ const SetupCategories = (function () {
 
               SpreadsheetApp.getActive().toast('Отправляем изменения на сервер...', 'Обновление');
               const result = zmData.Request(data);
-              Logs.logApiCall("Update Tags", data, result);
               Logger.log(`Результат ${isPartial ? 'частичного' : 'полного'} обновления категорий: ${JSON.stringify(result)}`);
-
+              if (typeof Logs !== 'undefined' && Logs.logApiCall) {  
+                Logs.logApiCall("UPDATE_TAGS", data, result);
+              }
               // Показываем итоговое сообщение
               SpreadsheetApp.getActive().toast(
                   `Обновление завершено:\n` +
@@ -323,7 +329,9 @@ const SetupCategories = (function () {
   // Загрузка категорий
   function doLoad() {
     const json = zmData.RequestForceFetch(['tag']);
-    Logs.logApiCall("Fetch Categories", { tag: [] }, json);
+    if (typeof Logs !== 'undefined' && Logs.logApiCall) {  
+      Logs.logApiCall("FETCH_TAGS", { tag: [] }, json);
+    }
     prepareData(json);
   }
 
