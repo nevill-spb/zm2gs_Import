@@ -1,8 +1,21 @@
-const fullSyncHandlers = [];
+// Функции для триггеров
+function onEdit(e) {  
+  if (typeof Tracking !== 'undefined') {  
+    Tracking.handleOnEdit(e);  
+  }  
+}  
+  
+function onChange(e) {  
+  if (typeof Tracking !== 'undefined') {  
+    Tracking.handleOnChange(e);  
+  }  
+}
 
 function onOpen(e) {  
   createMenu();  
 }
+
+const fullSyncHandlers = [];
 
 function createMenu() {  
   const ui = SpreadsheetApp.getUi();  
@@ -29,43 +42,36 @@ function createMenu() {
     if (typeof Tracking !== 'undefined' && Tracking.addTrackingMenuItems) {  
       Tracking.addTrackingMenuItems(importMenu);  
     }  
-      
+    if (typeof Validation !== 'undefined' && Validation.addValidationMenuItems) {  
+      Validation.addValidationMenuItems(importMenu);  
+    }  
     mainMenu.addSubMenu(importMenu);  
   }  
   
-  if (typeof SetupCategories !== 'undefined') {  
+  if (typeof Categories !== 'undefined') {  
     const categoriesMenu = ui.createMenu("Setup categories")  
-      .addItem("Load", "SetupCategories.doLoad")  
-      .addItem("Save", "SetupCategories.doSave")  
-      .addItem("Partial", "SetupCategories.doPartial");  
+      .addItem("Load", "Categories.doLoad")  
+      .addItem("Save", "Categories.doSave")  
+      .addItem("Partial", "Categories.doPartial");  
     mainMenu.addSubMenu(categoriesMenu);  
   }  
-  
-  if (typeof Validation !== 'undefined') {  
-    const validationMenu = ui.createMenu("Validation")  
-      .addItem("Setup Validation", "Validation.setupValidation")  
-      .addItem("Clear All Validation", "Validation.clearAllValidation");  
-    mainMenu.addSubMenu(validationMenu);  
+
+  if (typeof Accounts !== 'undefined') {  
+    const accountsMenu = ui.createMenu("Setup accounts")  
+      .addItem("Load", "Accounts.doLoad")  
+      .addItem("Save", "Accounts.doSave")  
+      .addItem("Partial", "Accounts.doPartial");  
+    mainMenu.addSubMenu(accountsMenu);
   }  
-  
+
   mainMenu.addToUi();  
 }
-
-/*const gsMenu = SpreadsheetApp.getUi()
-.createMenu((typeof paramMenuTitleMain !== 'undefined') ? paramMenuTitleMain : 'Zen Money')
-.addItem((typeof paramMenuTitleFullSync !== 'undefined') ? paramMenuTitleFullSync : 'Full sync', 'doFullSync')
-.addItem((typeof paramMenuTitleFullSync !== 'undefined') ? paramMenuTitleFullSync : 'Update Dictionaries', 'doUpdateDictionaries')
-.addSeparator();
-
-function onOpen() {
-  gsMenu.addToUi();
-}*/
 
 // Полная синхронизация
 function doFullSync() {
   const json = zmData.RequestData();
 
-  doUpdateDictionaries()
+  doUpdateDictionaries();
   fullSyncHandlers.forEach(f => f(json));
 }
 
@@ -75,23 +81,33 @@ function doUpdateDictionaries() {
     const requestPayload = ["account", "merchant", "instrument", "tag", "user"];
     const json = zmData.RequestForceFetch(requestPayload);
     Dictionaries.updateDictionaries(json);
-    Dictionaries.saveDictionariesToSheet();  // Записываем обновлённые словари на лист
+    Dictionaries.saveDictionariesToSheet();  
     Logger.log("Справочники обновлены");
   } catch (error) {
     Logger.log("Ошибка при обновлении справочников: " + error.toString());
   }
 }
 
-const sheetHelper = (function () {
-  const o = {};
-
+const sheetHelper = (function () {  
+  const o = {};  
+  
+  // Проверка, что активный лист - это лист настроек  
+  function isSettingsSheetActive() {  
+    const activeSheet = SpreadsheetApp.getActiveSheet();  
+    return activeSheet && activeSheet.getName() === Settings.SHEETS.SETTINGS.NAME;  
+  }  
+  
   o.Get = function (sheetName) {
     let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
-    if (sheet === null) {
-      sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet();
-      sheet.setName(sheetName);
+    if (sheet === null && !isSettingsSheetActive()) {
+      try {
+        sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet();
+        sheet.setName(sheetName);
+      } catch (error) {
+        return null;
+      }
     }
-
+    
     return sheet;
   };
 
