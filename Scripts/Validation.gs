@@ -154,18 +154,6 @@ const Validation = (function() {
     }
   }
 
-  // Создание меню
-  function createMenu() {
-    const ui = SpreadsheetApp.getUi();
-    const subMenu = ui.createMenu("Validation")
-      .addItem("Setup Validation", "Validation.setupValidation")
-      .addItem("Clear All Validation", "Validation.clearAllValidation");
-    gsMenu.addSubMenu(subMenu);
-  }
-
-  // Вызываем создание меню при инициализации модуля
-  createMenu();
-
   // Публичный интерфейс
   return {
     setupValidation,
