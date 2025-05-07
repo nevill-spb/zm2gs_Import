@@ -11,17 +11,17 @@ const Validation = (function() {
     ).setDataValidation(rule);    
   }
 
-  // Приватная функция для получения уникальных непустых значений
-  function uniqueNonEmpty(arr) {
-    return [...new Set(arr.filter(v => v && v.trim() !== ''))];
+  // Функция для получения уникальных непустых значений
+  function uniqueNonEmpty(array) {
+    return [...new Set(array.filter(v => v && v.trim() !== ''))];
   }
 
-  // Приватная функция поиска индекса колонки по id поля
+  // Функция поиска индекса колонки по id поля
   function findColumnIndex(fieldId) {
     return Settings.TRANSACTION_FIELDS.findIndex(field => field.id === fieldId) + 1;
   }
 
-  // Приватная функция установки валидации для счетов и тегов
+  // Функция установки валидации для счетов и тегов
   function setupFieldsValidation() {
     try {
       const sheet = sheetHelper.GetSheetFromSettings('EXPORT_SHEET');
@@ -53,7 +53,7 @@ const Validation = (function() {
       // Создаём правила валидации
       const accountRule = SpreadsheetApp.newDataValidation()
         .requireValueInList(accountTitles)
-        .setAllowInvalid(false)
+        .setAllowInvalid(true)
         .build();
 
       const tagRule = SpreadsheetApp.newDataValidation()
@@ -94,7 +94,7 @@ const Validation = (function() {
     }
   }
 
-  // Приватная функция очистки всей валидации
+  // Функция очистки валидации
   function clearAllValidation() {
     try {
       const sheet = sheetHelper.GetSheetFromSettings('EXPORT_SHEET');
@@ -140,12 +140,11 @@ const Validation = (function() {
     }
   }
 
-  // Публичная функция для вызова из меню
+  // Функция для вызова из меню
   function setupValidation() {
     try {
       // Убедимся, что справочники загружены
       Dictionaries.loadDictionariesFromSheet();
-      
       initializeTagModeSettings();
       setupFieldsValidation();
       SpreadsheetApp.getActive().toast('Валидация настроена успешно');
@@ -169,7 +168,7 @@ const Validation = (function() {
 
   // Публичный интерфейс
   return {
-    setupValidation: setupValidation,
-    clearAllValidation: clearAllValidation
+    setupValidation,
+    clearAllValidation
   };
 })();
