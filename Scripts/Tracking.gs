@@ -1,4 +1,12 @@
 const Tracking = (function() {
+  //═══════════════════════════════════════════════════════════════════════════
+  // КОНСТАНТЫ И КОНФИГУРАЦИЯ
+  // Этот блок содержит все константы и настройки модуля:
+  // - PROP_KEY: ключ для хранения состояния в ScriptProperties
+  // - WATCHED_FIELDS: список полей, изменения которых нужно отслеживать
+  // - WATCHED_COLUMNS: преобразованные индексы колонок для отслеживаемых полей
+  // - DATE_COLUMN и MODIFIED_COLUMN: специальные колонки для работы с датами и чекбоксами
+  //═══════════════════════════════════════════════════════════════════════════
   const PROP_KEY = 'TRACKING_ENABLED';
   const WATCHED_FIELDS = [
     'date',
@@ -12,6 +20,7 @@ const Tracking = (function() {
     'incomeAccount',
     'income'
   ];
+
   const WATCHED_COLUMNS = WATCHED_FIELDS.map(fieldId => {
     const index = Settings.TRANSACTION_FIELDS.findIndex(f => f.id === fieldId);
     if (index === -1) {
@@ -20,16 +29,48 @@ const Tracking = (function() {
     }
     return index + 1;
   }).filter(col => col !== null);
+
   const WATCHED_COLUMNS_SET = new Set(WATCHED_COLUMNS);
   const DATE_COLUMN = Settings.TRANSACTION_FIELDS.findIndex(f => f.id === 'date') + 1;
   const MODIFIED_COLUMN = Settings.TRANSACTION_FIELDS.findIndex(f => f.id === 'modified') + 1;
 
-  // Кэшируем имя и объект листа
+  //═══════════════════════════════════════════════════════════════════════════
+  // СОСТОЯНИЕ МОДУЛЯ
+  // Здесь хранятся переменные, отвечающие за текущее состояние модуля:
+  // - cachedSheetName: кэшированное имя активного листа
+  // - sheet: кэшированный объект листа
+  // - trackingEnabled: флаг, включено ли отслеживание
+  //═══════════════════════════════════════════════════════════════════════════
   let cachedSheetName = null;
   let sheet = null;
   let trackingEnabled = PropertiesService.getScriptProperties().getProperty(PROP_KEY) === 'true';
 
-  // Получить объект листа по имени из настроек
+  //═══════════════════════════════════════════════════════════════════════════
+  // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+  // Набор утилитарных функций для:
+  // - логирования (logDebug)
+  // - проверки состояния (isTrackingEnabled)
+  // - проверки колонок (isWatchedColumn)
+  //═══════════════════════════════════════════════════════════════════════════
+  function logDebug(message, data = null) {
+    Logger.log('[Tracking] ' + message);
+    if (data) Logger.log(JSON.stringify(data));
+  }
+
+  function isTrackingEnabled() {
+    return trackingEnabled;
+  }
+
+  function isWatchedColumn(col) {
+    return WATCHED_COLUMNS_SET.has(col);
+  }
+
+  //═══════════════════════════════════════════════════════════════════════════
+  // ФУНКЦИИ РАБОТЫ С ЛИСТАМИ
+  // Функции для взаимодействия с Google Sheets:
+  // - getSheet: получение и кэширование активного листа
+  // - isWatchedSheet: проверка, нужно ли отслеживать изменения в листе
+  //═══════════════════════════════════════════════════════════════════════════
   function getSheet() {
     try {
       const currentSheetName = sheetHelper.GetCellValue(
@@ -47,12 +88,10 @@ const Tracking = (function() {
     }
   }
 
-  // Проверить, что переданный лист — отслеживаемый и не Settings
   function isWatchedSheet(checkSheet) {
     if (!checkSheet) return false;
-    if (checkSheet.getName() === Settings.SHEETS.SETTINGS.NAME) {
-      return false;
-    }
+    if (checkSheet.getName() === Settings.SHEETS.SETTINGS.NAME) return false;
+    
     try {
       const importSheetName = sheetHelper.GetCellValue(
         Settings.SHEETS.SETTINGS.NAME, 
@@ -65,23 +104,13 @@ const Tracking = (function() {
     }
   }
 
-  // Проверить, что колонка отслеживается
-  function isWatchedColumn(col) {
-    return WATCHED_COLUMNS_SET.has(col);
-  }
-
-  // Логирование для отладки
-  function logDebug(message, data = null) {
-    Logger.log('[Tracking] ' + message);
-    if (data) Logger.log(JSON.stringify(data));
-  }
-
-  // Проверить, включено ли отслеживание
-  function isTrackingEnabled() {
-    return trackingEnabled;
-  }
-
-  // Создать триггеры для отслеживания изменений
+  //═══════════════════════════════════════════════════════════════════════════
+  // УПРАВЛЕНИЕ ТРИГГЕРАМИ
+  // Функции для управления триггерами Google Apps Script:
+  // - createTriggers: создание триггеров onEdit и onChange
+  // - deleteTriggers: удаление существующих триггеров
+  // Триггеры необходимы для отслеживания изменений в реальном времени
+  //═══════════════════════════════════════════════════════════════════════════
   function createTriggers() {
     try {
       deleteTriggers(true);
@@ -106,7 +135,6 @@ const Tracking = (function() {
     }
   }
 
-  // Удалить триггеры отслеживания изменений
   function deleteTriggers(silent = false) {
     try {
       const triggers = ScriptApp.getProjectTriggers();
@@ -118,6 +146,7 @@ const Tracking = (function() {
 
       trackingEnabled = false;
       PropertiesService.getScriptProperties().setProperty(PROP_KEY, 'false');
+      
       if (!silent) {
         SpreadsheetApp.getActive().toast('Триггеры успешно отключены!', 'Успех');
       }
@@ -130,20 +159,48 @@ const Tracking = (function() {
     }
   }
 
+  //═══════════════════════════════════════════════════════════════════════════
+  // ОБРАБОТКА ИЗМЕНЕНИЙ
+  // Основной блок функций для обработки изменений в таблице:
+  // - validateAndGetRange: проверка и получение диапазона изменений
+  // - handleOnEdit/handleOnChange: обработчики событий редактирования
+  // - handleChange: основная логика обработки изменений
+  //═══════════════════════════════════════════════════════════════════════════
+  function validateAndGetRange(e) {
+    if (!isTrackingEnabled()) return null;
+    if (!e) return null;
+
+    let targetSheet, range;
+    
+    if (e.range) {
+      // Событие onEdit
+      targetSheet = e.range.getSheet();
+      range = e.range;
+    } else {
+      // Событие onChange
+      targetSheet = SpreadsheetApp.getActiveSheet();
+      range = targetSheet.getActiveRange();
+    }
+
+    if (!isWatchedSheet(targetSheet) || !range) return null;
+    
+    return {
+      sheet: targetSheet,
+      range: range
+    };
+  }
+
   function handleOnEdit(e) {
     try {
-      if (!isTrackingEnabled()) return;
-      if (!e || !e.range) return;
-      
-      const sheet = e.range.getSheet();
-      if (!isWatchedSheet(sheet)) return;
+      const validated = validateAndGetRange(e);
+      if (!validated) return;
 
       logDebug('onEdit вызван', {
-        sheet: sheet.getName(),
-        range: e.range.getA1Notation()
+        sheet: validated.sheet.getName(),
+        range: validated.range.getA1Notation()
       });
 
-      handleChange(e.range);
+      handleChange(validated.range);
     } catch (error) {
       logDebug('Ошибка в onEdit', error);
     }
@@ -151,27 +208,20 @@ const Tracking = (function() {
 
   function handleOnChange(e) {
     try {
-      if (!isTrackingEnabled()) return;
-      if (!e) return;
+      const validated = validateAndGetRange(e);
+      if (!validated) return;
 
-      const activeSheet = SpreadsheetApp.getActiveSheet();
-      if (!isWatchedSheet(activeSheet)) return;
+      logDebug('onChange вызван', {
+        sheet: validated.sheet.getName(),
+        range: validated.range.getA1Notation()
+      });
 
-      const range = activeSheet.getActiveRange();
-      if (range) {
-        logDebug('onChange вызван', {
-          sheet: activeSheet.getName(),
-          range: range.getA1Notation()
-        });
-
-        handleChange(range);
-      }
+      handleChange(validated.range);
     } catch (error) {
       logDebug('Ошибка в onChange', error);
     }
   }
 
-  // Основная функция обработки изменений
   function handleChange(range) {
     try {
       const currentSheet = getSheet();
@@ -182,6 +232,7 @@ const Tracking = (function() {
       const startCol = range.getColumn();
       const endCol = range.getLastColumn();
 
+      // Проверяем, есть ли изменения в отслеживаемых колонках
       let needsModification = false;
       for (let col = startCol; col <= endCol; col++) {
         if (isWatchedColumn(col)) {
@@ -191,8 +242,10 @@ const Tracking = (function() {
       }
       if (!needsModification) return;
 
+      // Получаем даты для всех затронутых строк
       const dates = currentSheet.getRange(startRow, DATE_COLUMN, endRow - startRow + 1, 1).getValues();
 
+      // Формируем списки строк и значений для обновления
       const rowsToModify = [];
       const valuesToSet = [];
 
@@ -204,6 +257,7 @@ const Tracking = (function() {
         }
       });
 
+      // Если есть строки для обновления, группируем их и обновляем
       if (rowsToModify.length > 0) {
         let currentGroup = {
           start: rowsToModify[0],
@@ -212,6 +266,7 @@ const Tracking = (function() {
         };
         const groups = [currentGroup];
 
+        // Группируем последовательные строки
         for (let i = 1; i < rowsToModify.length; i++) {
           if (rowsToModify[i] === currentGroup.start + currentGroup.count) {
             currentGroup.count++;
@@ -226,6 +281,7 @@ const Tracking = (function() {
           }
         }
 
+        // Обновляем каждую группу строк
         groups.forEach(group => {
           currentSheet.getRange(group.start, MODIFIED_COLUMN, group.count, 1)
             .setValues(group.values);
@@ -236,7 +292,10 @@ const Tracking = (function() {
     }
   }
 
-  // Добавить пункты меню для управления триггерами
+  //═══════════════════════════════════════════════════════════════════════════
+  // ИНТЕРФЕЙС МЕНЮ
+  // Функции для добавления пунктов управления триггерами в меню таблицы
+  //═══════════════════════════════════════════════════════════════════════════
   function addTrackingMenuItems(importMenu) {
     return importMenu
       .addSeparator()
@@ -244,6 +303,10 @@ const Tracking = (function() {
       .addItem('Clear Tracking Triggers', 'Tracking.deleteTriggers');
   }
 
+  //═══════════════════════════════════════════════════════════════════════════
+  // ПУБЛИЧНЫЙ ИНТЕРФЕЙС
+  // Экспортируемые функции модуля, доступные для внешнего использования
+  //═══════════════════════════════════════════════════════════════════════════
   return {
     createTriggers,
     deleteTriggers,
