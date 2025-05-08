@@ -1,11 +1,22 @@
 const Categories = (function () {
-  const sheet = sheetHelper.GetSheetFromSettings('TAGS_SHEET'); 
+  //═══════════════════════════════════════════════════════════════════════════
+  // ИНИЦИАЛИЗАЦИЯ
+  //═══════════════════════════════════════════════════════════════════════════
+  const sheet = sheetHelper.GetSheetFromSettings('TAGS_SHEET');
   if (!sheet) {
     Logger.log("Лист с категориями не найден");
     SpreadsheetApp.getActive().toast('Лист с категориями не найден', 'Ошибка');
     return;
   }
 
+  // Индексы полей по id для удобства доступа
+  const fieldIndex = {};
+  Settings.CATEGORY_FIELDS.forEach((f, i) => fieldIndex[f.id] = i);
+
+  //═══════════════════════════════════════════════════════════════════════════
+  // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+  //═══════════════════════════════════════════════════════════════════════════
+  
   // Парсеры для булевых значений
   function parseBool(value) {
     return value === true || value === "TRUE";
@@ -14,10 +25,6 @@ const Categories = (function () {
   function parseBoolRequired(value) {
     return value || value === null ? "TRUE" : "FALSE";
   }
-
-  // Индексы полей по id для удобства доступа
-  const fieldIndex = {};
-  Settings.CATEGORY_FIELDS.forEach((f, i) => fieldIndex[f.id] = i);
 
   // Преобразует hex-цвет в формат ZenMoney (число)
   function hexToZenColor(hex) {
@@ -30,6 +37,10 @@ const Categories = (function () {
     return (r << 16) + (g << 8) + b;
   }
 
+  //═══════════════════════════════════════════════════════════════════════════
+  // ФУНКЦИИ РАБОТЫ С ДАННЫМИ
+  //═══════════════════════════════════════════════════════════════════════════
+  
   // Построение строки данных по полям из Settings
   function buildRow(tag) {
     return Settings.CATEGORY_FIELDS.map(field => {
@@ -57,9 +68,9 @@ const Categories = (function () {
 
   // Подготовка данных категорий для записи в лист
   function prepareData(json) {
-    if (!('tag' in json)) {  
-          SpreadsheetApp.getActive().toast('Нет данных о категориях', 'Предупреждение');  
-          return;  
+    if (!('tag' in json)) {
+      SpreadsheetApp.getActive().toast('Нет данных о категориях', 'Предупреждение');
+      return;
     }
 
     // Сортируем категории по названию и id для стабильности
@@ -90,6 +101,10 @@ const Categories = (function () {
     writeDataToSheet(data);
     SpreadsheetApp.getActive().toast(`Загружено ${data.length} категорий`, 'Информация');
   }
+
+  //═══════════════════════════════════════════════════════════════════════════
+  // ФУНКЦИИ РАБОТЫ С ЛИСТОМ
+  //═══════════════════════════════════════════════════════════════════════════
 
   // Запись данных в лист
   function writeDataToSheet(data) {
@@ -122,7 +137,7 @@ const Categories = (function () {
     }
   }
 
-  // Очистка лишних строк
+  // Очистка лишних строк (только для чекбокс-колонок)
   function clearExtraRows(dataLength, boolFields) {
     const boolCols = boolFields.map(id => fieldIndex[id]).filter(i => i !== undefined);
     if (boolCols.length > 0) {
@@ -158,14 +173,16 @@ const Categories = (function () {
     }
   }
 
+  //═══════════════════════════════════════════════════════════════════════════
+  // ФУНКЦИИ СОЗДАНИЯ И ОБНОВЛЕНИЯ КАТЕГОРИЙ
+  //═══════════════════════════════════════════════════════════════════════════
+
   // Создание объекта категории из строки данных
   function createTagFromRow(row, i, ts, tags, idMap) {
     const oldTagId = row[fieldIndex.id];
     const oldParentId = row[fieldIndex.parent] || null;
     const title = row[fieldIndex.title];
-    
     if (!title || typeof title !== 'string' || title.trim() === '') return null;
-    
     const colorHex = sheet.getRange(i + 2, fieldIndex.color + 1).getBackground();
     const user = row[fieldIndex.user] || Number(Settings.DefaultUserId);
     const deleteFlag = row[fieldIndex.delete] === true;
@@ -212,124 +229,127 @@ const Categories = (function () {
 
   // Обновление категорий
   function updateTags(values, isPartial = false) {
-      try {
-          const json = zmData.RequestForceFetch(['tag']);
-          const tags = json['tag'] || [];
-          const ts = Math.floor(Date.now() / 1000);
+    try {
+      const json = zmData.RequestForceFetch(['tag']);
+      const tags = json['tag'] || [];
+      const ts = Math.floor(Date.now() / 1000);
 
-          const newTags = [];
-          const deletionRequests = [];
-          const deletedTitles = []; // Массив для хранения названий удаляемых категорий
-          const idMap = {};
-          const newIds = Array(values.length).fill(null);
+      const newTags = [];
+      const deletionRequests = [];
+      const deletedTitles = [];
+      const idMap = {};
+      const newIds = Array(values.length).fill(null);
 
-          // Первый проход: определяем новые ID
-          for (let i = 0; i < values.length; i++) {
-              const row = values[i];
-              if (isPartial && !row[fieldIndex.modify]) continue;
+      // Первый проход: определяем новые ID
+      for (let i = 0; i < values.length; i++) {
+        const row = values[i];
+        if (isPartial && !row[fieldIndex.modify]) continue;
 
-              const oldTagId = row[fieldIndex.id];
-              const title = row[fieldIndex.title];
-              if (!title || typeof title !== 'string' || title.trim() === '') continue;
+        const oldTagId = row[fieldIndex.id];
+        const title = row[fieldIndex.title];
+        if (!title || typeof title !== 'string' || title.trim() === '') continue;
 
-              if (!oldTagId || !tags.find(t => t.id === oldTagId)) {
-                  const newId = Utilities.getUuid().toLowerCase();
-                  idMap[oldTagId || `new_${i}`] = newId;
-                  newIds[i] = newId;
-              } else {
-                  idMap[oldTagId] = oldTagId;
-              }
-          }
-
-          // Обновляем ID в таблице
-          if (newIds.some(id => id !== null)) {
-              const idColumnRange = sheet.getRange(2, fieldIndex.id + 1, values.length, 1);
-              const idColumnValues = idColumnRange.getValues();
-              for (let i = 0; i < values.length; i++) {
-                  if (newIds[i]) idColumnValues[i][0] = newIds[i];
-              }
-              idColumnRange.setValues(idColumnValues);
-          }
-
-          // Второй проход: создаем/обновляем теги
-          for (let i = 0; i < values.length; i++) {
-              const row = values[i];
-              if (isPartial && !row[fieldIndex.modify]) continue;
-
-              const result = createTagFromRow(row, i, ts, tags, idMap);
-              if (!result) continue;
-
-              if (result.deletion) {
-                  deletionRequests.push(result.deletion);
-                  // Сохраняем название удаляемой категории
-                  const title = row[fieldIndex.title];
-                  if (title) deletedTitles.push(title);
-              } else if (result.tag) {
-                  newTags.push(result.tag);
-              }
-          }
-
-          // Отправляем изменения на сервер
-          if (newTags.length > 0 || deletionRequests.length > 0) {
-              // Показываем предупреждение, если есть удаляемые категории
-              if (deletedTitles.length > 0) {
-                  const deletionMsg = deletedTitles.length === 1 
-                      ? `Будет удалена категория: ${deletedTitles[0]}`
-                      : `Будут удалены категории:\n${deletedTitles.slice(0, 5).join('\n')}${
-                          deletedTitles.length > 5 ? `\n...и еще ${deletedTitles.length - 5}` : ''
-                      }`;
-                  SpreadsheetApp.getActive().toast(deletionMsg, 'Удаление категорий');
-                  // Небольшая пауза, чтобы пользователь успел увидеть сообщение
-                  Utilities.sleep(2000);
-              }
-
-              const data = {
-                  currentClientTimestamp: ts,
-                  serverTimestamp: ts
-              };
-
-              if (newTags.length > 0) data.tag = newTags;
-              if (deletionRequests.length > 0) data.deletion = deletionRequests;
-
-              SpreadsheetApp.getActive().toast('Отправляем изменения на сервер...', 'Обновление');
-              const result = zmData.Request(data);
-              Logger.log(`Результат ${isPartial ? 'частичного' : 'полного'} обновления категорий: ${JSON.stringify(result)}`);
-              if (typeof Logs !== 'undefined' && Logs.logApiCall) {  
-                Logs.logApiCall("UPDATE_TAGS", data, result);
-              }
-              // Показываем итоговое сообщение
-              SpreadsheetApp.getActive().toast(
-                  `Обновление завершено:\n` +
-                  `Новых/измененных: ${newTags.length}\n` +
-                  `Удалено: ${deletionRequests.length}`,
-                  'Успех'
-              );
-
-              // Сбрасываем флаги modify после успешного обновления
-              if (isPartial) {
-                  const modifyColumn = fieldIndex.modify + 1;
-                  for (let i = 0; i < values.length; i++) {
-                      if (values[i][fieldIndex.modify] === true) {
-                          sheet.getRange(i + 2, modifyColumn).setValue(false);
-                      }
-                  }
-              }
-
-              doLoad();
-          } else {
-              SpreadsheetApp.getActive().toast('Нет изменений для обработки', 'Информация');
-          }
-      } catch (error) {
-          const errorMsg = `Ошибка при обновлении категорий: ${error.toString()}`;
-          Logger.log(errorMsg);
-          SpreadsheetApp.getActive().toast(errorMsg, 'Ошибка');
+        if (!oldTagId || !tags.find(t => t.id === oldTagId)) {
+          const newId = Utilities.getUuid().toLowerCase();
+          idMap[oldTagId || `new_${i}`] = newId;
+          newIds[i] = newId;
+        } else {
+          idMap[oldTagId] = oldTagId;
+        }
       }
+
+      // Обновляем ID в таблице
+      if (newIds.some(id => id !== null)) {
+        const idColumnRange = sheet.getRange(2, fieldIndex.id + 1, values.length, 1);
+        const idColumnValues = idColumnRange.getValues();
+        for (let i = 0; i < values.length; i++) {
+          if (newIds[i]) idColumnValues[i][0] = newIds[i];
+        }
+        idColumnRange.setValues(idColumnValues);
+      }
+
+      // Второй проход: создаем/обновляем категории
+      for (let i = 0; i < values.length; i++) {
+        const row = values[i];
+        if (isPartial && !row[fieldIndex.modify]) continue;
+
+        const result = createTagFromRow(row, i, ts, tags, idMap);
+        if (!result) continue;
+
+        if (result.deletion) {
+          deletionRequests.push(result.deletion);
+          // Сохраняем название удаляемой категории
+          const title = row[fieldIndex.title];
+          if (title) deletedTitles.push(title);
+        } else if (result.tag) {
+          newTags.push(result.tag);
+        }
+      }
+
+      // Предупреждение об удалении категорий
+      if (deletedTitles.length > 0) {
+        const deletionMsg = deletedTitles.length === 1
+          ? `Будет удалена категория: ${deletedTitles[0]}`
+          : `Будут удалены категории:\n${deletedTitles.slice(0, 5).join('\n')}${
+              deletedTitles.length > 5 ? `\n...и еще ${deletedTitles.length - 5}` : ''
+          }`;
+        SpreadsheetApp.getActive().toast(deletionMsg, 'Удаление категорий');
+        // Небольшая пауза, чтобы пользователь успел увидеть сообщение
+        Utilities.sleep(2000);
+      }
+
+      // Отправляем изменения на сервер
+      if (newTags.length > 0 || deletionRequests.length > 0) {
+        const data = {
+          currentClientTimestamp: ts,
+          serverTimestamp: ts
+        };
+
+        if (newTags.length > 0) data.tag = newTags;
+        if (deletionRequests.length > 0) data.deletion = deletionRequests;
+        SpreadsheetApp.getActive().toast('Отправляем изменения на сервер...', 'Обновление');
+        const result = zmData.Request(data);
+        Logger.log(`Результат ${isPartial ? 'частичного' : 'полного'} обновления категорий: ${JSON.stringify(result)}`);
+        if (typeof Logs !== 'undefined' && Logs.logApiCall) {
+          Logs.logApiCall("UPDATE_TAGS", data, result);
+        }
+        // Показываем итоговое сообщение
+        SpreadsheetApp.getActive().toast(
+          `Обновление завершено:\n` +
+          `Новых/измененных: ${newTags.length}\n` +
+          `Удалено: ${deletionRequests.length}`,
+          'Успех'
+        );
+
+        // Сбрасываем флаги modify после успешного обновления
+        if (isPartial) {
+          const modifyColumn = fieldIndex.modify + 1;
+          for (let i = 0; i < values.length; i++) {
+            if (values[i][fieldIndex.modify] === true) {
+              sheet.getRange(i + 2, modifyColumn).setValue(false);
+            }
+          }
+        }
+
+        doLoad();
+      } else {
+        SpreadsheetApp.getActive().toast('Нет изменений для обработки', 'Информация');
+      }
+    } catch (error) {
+      Logger.log("Ошибка при обновлении категорий: " + error.toString());
+      SpreadsheetApp.getActive().toast("Ошибка: " + error.toString(), "Ошибка");
+    }
   }
+
+  //═══════════════════════════════════════════════════════════════════════════
+  // ПУБЛИЧНЫЕ МЕТОДЫ
+  //═══════════════════════════════════════════════════════════════════════════
 
   // Загрузка категорий
   function doLoad() {
+    Dictionaries.loadDictionariesFromSheet();
     const json = zmData.RequestForceFetch(['tag']);
-    if (typeof Logs !== 'undefined' && Logs.logApiCall) {  
+    if (typeof Logs !== 'undefined' && Logs.logApiCall) {
       Logs.logApiCall("FETCH_TAGS", { tag: [] }, json);
     }
     prepareData(json);
@@ -338,36 +358,36 @@ const Categories = (function () {
   // Полное обновление категорий
   function doSave() {
     const lastRow = sheet.getLastRow();
-    if (lastRow < 2) {  
-      const msg = "Нет данных для обновления категорий";  
-      Logger.log(msg);  
-      SpreadsheetApp.getActive().toast(msg, 'Предупреждение');  
-      return;  
+    if (lastRow < 2) {
+      const msg = "Нет данных для обновления категорий";
+      Logger.log(msg);
+      SpreadsheetApp.getActive().toast(msg, 'Предупреждение');
+      return;
     }
 
     SpreadsheetApp.getActive().toast('Начинаем полное обновление категорий...', 'Обновление');
     Dictionaries.loadDictionariesFromSheet();
     const values = sheet.getRange(2, 1, lastRow - 1, Settings.CATEGORY_FIELDS.length).getValues();
-    updateTags(values, false);
+    updateTags(values, false); // Передаем данные с флагом isPartial = false
   }
 
   // Частичное обновление категорий
   function doPartial() {
     const lastRow = sheet.getLastRow();
-    if (lastRow < 2) {  
-      const msg = "Нет данных для обновления категорий";  
-      Logger.log(msg);  
-      SpreadsheetApp.getActive().toast(msg, 'Предупреждение');  
-      return;  
+    if (lastRow < 2) {
+      const msg = "Нет данных для обновления категорий";
+      Logger.log(msg);
+      SpreadsheetApp.getActive().toast(msg, 'Предупреждение');
+      return;
     }
 
     SpreadsheetApp.getActive().toast('Начинаем частичное обновление категорий...', 'Обновление');
     Dictionaries.loadDictionariesFromSheet();
     const values = sheet.getRange(2, 1, lastRow - 1, Settings.CATEGORY_FIELDS.length).getValues();
-    updateTags(values, true);
+    updateTags(values, true); // Передаем данные с флагом isPartial = true
   }
 
-  // Добавляем обработчик полной синхронизации
+  // Регистрация обработчика полной синхронизации
   fullSyncHandlers.push(prepareData);
 
   return {
