@@ -1,163 +1,246 @@
-// Функции для триггеров
-function onEdit(e) {  
-  if (typeof Tracking !== 'undefined') {  
-    Tracking.handleOnEdit(e);  
-  }  
-}  
-  
-function onChange(e) {  
-  if (typeof Tracking !== 'undefined') {  
-    Tracking.handleOnChange(e);  
-  }  
+//═══════════════════════════════════════════════════════════════════════════
+// ГЛОБАЛЬНЫЕ ТРИГГЕРЫ
+// Функции, которые вызываются автоматически при определенных событиях
+//═══════════════════════════════════════════════════════════════════════════
+function onEdit(e) {
+  try {
+    if (typeof Tracking !== 'undefined') {
+      Tracking.handleOnEdit(e);
+    }
+  } catch (error) {
+    Logger.log("Ошибка в onEdit: " + error.toString());
+  }
 }
 
-function onOpen(e) {  
-  createMenu();  
+function onChange(e) {
+  try {
+    if (typeof Tracking !== 'undefined') {
+      Tracking.handleOnChange(e);
+    }
+  } catch (error) {
+    Logger.log("Ошибка в onChange: " + error.toString());
+  }
 }
 
+function onOpen(e) {
+  try {
+    createMenu();
+  } catch (error) {
+    Logger.log("Ошибка в onOpen: " + error.toString());
+  }
+}
+
+//═══════════════════════════════════════════════════════════════════════════
+// МЕНЮ
+// Функции для создания и управления меню Zen Money
+//═══════════════════════════════════════════════════════════════════════════
+function createMenu() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const mainMenu = ui.createMenu('Zen Money')
+      .addItem('Full sync', 'doFullSync')
+      .addItem('Update Dictionaries', 'doUpdateDictionaries')
+      .addSeparator();
+
+    // Добавляем подменю для каждого модуля
+    addSubMenu(mainMenu, 'Export', Export, [
+      { name: "Full Export", func: "doFullExport" },
+      { name: "Incremental Export", func: "doIncrementalExport" },
+      { name: "Prepare Changes Sheet", func: "prepareChangesSheet" },
+      { name: "Apply Changes to Data Sheet", func: "applyChangesToDataSheet" }
+    ]);
+
+    addSubMenu(mainMenu, 'Import', Import, [
+      { name: "Partial Import", func: "doUpdate" }
+    ], [Tracking, Validation]);
+
+    addSubMenu(mainMenu, 'Setup categories', Categories, [
+      { name: "Load", func: "doLoad" },
+      { name: "Save", func: "doSave" },
+      { name: "Partial", func: "doPartial" }
+    ]);
+
+    addSubMenu(mainMenu, 'Setup accounts', Accounts, [
+      { name: "Load", func: "doLoad" },
+      { name: "Save", func: "doSave" },
+      { name: "Partial", func: "doPartial" }
+    ]);
+
+    mainMenu.addToUi();
+  } catch (error) {
+    Logger.log("Ошибка при создании меню: " + error.toString());
+  }
+}
+
+function addSubMenu(mainMenu, menuName, module, items, extraModules = []) {
+  if (typeof module !== 'undefined') {
+    const subMenu = SpreadsheetApp.getUi().createMenu(menuName);
+    items.forEach(item => subMenu.addItem(item.name, `${module.name}.${item.func}`));
+
+    extraModules.forEach(extraModule => {
+      if (typeof extraModule !== 'undefined' && typeof extraModule.addMenuItems === 'function') {
+        extraModule.addMenuItems(subMenu);
+      }
+    });
+
+    mainMenu.addSubMenu(subMenu);
+  }
+}
+
+//═══════════════════════════════════════════════════════════════════════════
+// СИНХРОНИЗАЦИЯ
+// Функции для полной синхронизации и обновления справочников
+//═══════════════════════════════════════════════════════════════════════════
 const fullSyncHandlers = [];
 
-function createMenu() {  
-  const ui = SpreadsheetApp.getUi();  
-  const mainMenu = ui.createMenu('Zen Money')  
-    .addItem('Full sync', 'doFullSync')  
-    .addItem('Update Dictionaries', 'doUpdateDictionaries')  
-    .addSeparator();  
-  
-  // Проверяем наличие и добавляем подменю для каждого модуля  
-  if (typeof Export !== 'undefined') {  
-    const exportMenu = ui.createMenu("Export")  
-      .addItem("Full Export", "Export.doFullExport")  
-      .addSeparator()  
-      .addItem("Incremental Export", "Export.doIncrementalExport")  
-      .addItem("Prepare Changes Sheet", "Export.prepareChangesSheet")  
-      .addItem("Apply Changes to Data Sheet", "Export.applyChangesToDataSheet");  
-    mainMenu.addSubMenu(exportMenu);  
-  }  
-  
-  if (typeof Import !== 'undefined') {  
-    const importMenu = ui.createMenu("Import")  
-      .addItem("Partial Import", "Import.doUpdate");  
-      
-    if (typeof Tracking !== 'undefined' && Tracking.addTrackingMenuItems) {  
-      Tracking.addTrackingMenuItems(importMenu);  
-    }  
-    if (typeof Validation !== 'undefined' && Validation.addValidationMenuItems) {  
-      Validation.addValidationMenuItems(importMenu);  
-    }  
-    mainMenu.addSubMenu(importMenu);  
-  }  
-  
-  if (typeof Categories !== 'undefined') {  
-    const categoriesMenu = ui.createMenu("Setup categories")  
-      .addItem("Load", "Categories.doLoad")  
-      .addItem("Save", "Categories.doSave")  
-      .addItem("Partial", "Categories.doPartial");  
-    mainMenu.addSubMenu(categoriesMenu);  
-  }  
-
-  if (typeof Accounts !== 'undefined') {  
-    const accountsMenu = ui.createMenu("Setup accounts")  
-      .addItem("Load", "Accounts.doLoad")  
-      .addItem("Save", "Accounts.doSave")  
-      .addItem("Partial", "Accounts.doPartial");  
-    mainMenu.addSubMenu(accountsMenu);
-  }  
-
-  mainMenu.addToUi();  
-}
-
-// Полная синхронизация
 function doFullSync() {
-  const json = zmData.RequestData();
+  try {
+    const json = zmData.RequestData();
 
-  doUpdateDictionaries();
-  fullSyncHandlers.forEach(f => f(json));
+    doUpdateDictionaries();
+    fullSyncHandlers.forEach(f => {
+      try {
+        f(json);
+      } catch (error) {
+        Logger.log(`Ошибка в обработчике полной синхронизации: ${error.toString()}`);
+      }
+    });
+  } catch (error) {
+    Logger.log("Ошибка при полной синхронизации: " + error.toString());
+  }
 }
 
-// Обновление справочников
 function doUpdateDictionaries() {
   try {
     const requestPayload = ["account", "merchant", "instrument", "tag", "user"];
     const json = zmData.RequestForceFetch(requestPayload);
     Dictionaries.updateDictionaries(json);
-    Dictionaries.saveDictionariesToSheet();  
+    Dictionaries.saveDictionariesToSheet();
     Logger.log("Справочники обновлены");
   } catch (error) {
     Logger.log("Ошибка при обновлении справочников: " + error.toString());
   }
 }
 
-const sheetHelper = (function () {  
-  const o = {};  
-  
-  // Проверка, что активный лист - это лист настроек  
-  function isSettingsSheetActive() {  
-    const activeSheet = SpreadsheetApp.getActiveSheet();  
-    return activeSheet && activeSheet.getName() === Settings.SHEETS.SETTINGS.NAME;  
-  }  
-  
+//═══════════════════════════════════════════════════════════════════════════
+// SHEET HELPER
+// Утилиты для работы с Google Sheets
+//═══════════════════════════════════════════════════════════════════════════
+const sheetHelper = (function () {
+  const o = {};
+
+  // Проверка, что активный лист - это лист настроек
+  function isSettingsSheetActive() {
+    const activeSheet = SpreadsheetApp.getActiveSheet();
+    return activeSheet && activeSheet.getName() === Settings.SHEETS.SETTINGS.NAME;
+  }
+
   o.Get = function (sheetName) {
-    let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
-    if (sheet === null && !isSettingsSheetActive()) {
-      try {
+    try {
+      let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+      if (!sheet && !isSettingsSheetActive()) {
         sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet();
         sheet.setName(sheetName);
-      } catch (error) {
-        return null;
       }
+      return sheet;
+    } catch (error) {
+      Logger.log(`Ошибка при получении листа ${sheetName}: ${error.toString()}`);
+      return null;
     }
-    
-    return sheet;
   };
 
   o.GetRange = function (sheetName, range) {
-    return o.Get(sheetName).getRange(range);
+    try {
+      const sheet = o.Get(sheetName);
+      return sheet ? sheet.getRange(range) : null;
+    } catch (error) {
+      Logger.log(`Ошибка при получении диапазона ${range} на листе ${sheetName}: ${error.toString()}`);
+      return null;
+    }
   };
 
   o.GetRangeValues = function (sheetName, range) {
-    return o.GetRange(sheetName, range).getValues();
+    try {
+      const rangeObj = o.GetRange(sheetName, range);
+      return rangeObj ? rangeObj.getValues() : null;
+    } catch (error) {
+      Logger.log(`Ошибка при получении значений диапазона ${range} на листе ${sheetName}: ${error.toString()}`);
+      return null;
+    }
   };
 
   o.GetCellValue = function (sheetName, cell) {
-    const values = o.GetRangeValues(sheetName, cell);
-
-    return values[0][0];
+    try {
+      const values = o.GetRangeValues(sheetName, cell);
+      return values && values.length > 0 && values[0].length > 0 ? values[0][0] : null;
+    } catch (error) {
+      Logger.log(`Ошибка при получении значения ячейки ${cell} на листе ${sheetName}: ${error.toString()}`);
+      return null;
+    }
   };
 
   o.WriteData = function (sheetName, data) {
-    const sheet = o.Get(sheetName);
-    sheet.clearContents();
-    sheet.getRange(1, 1, data.length, data[0].length).setValues(data);
+    try {
+      const sheet = o.Get(sheetName);
+      if (sheet) {
+        sheet.clearContents();
+        sheet.getRange(1, 1, data.length, data[0].length).setValues(data);
+      }
+    } catch (error) {
+      Logger.log(`Ошибка при записи данных на лист ${sheetName}: ${error.toString()}`);
+    }
   };
 
-  o.GetSheetFromSettings = function (cellKey) {  
-    const settingsSheet = o.Get(Settings.SHEETS.SETTINGS.NAME);  
-    const sheetName = settingsSheet.getRange(Settings.SHEETS.SETTINGS.CELLS[cellKey]).getValue();  
-    if (!sheetName || !sheetName.trim()) {  
-      throw new Error(`Некорректное имя листа в ячейке ${Settings.SHEETS.SETTINGS.CELLS[cellKey]}`);  
-    }  
-    return o.Get(sheetName.trim());  
+  o.GetSheetFromSettings = function (cellKey) {
+    try {
+      const settingsSheet = o.Get(Settings.SHEETS.SETTINGS.NAME);
+      const sheetName = settingsSheet.getRange(Settings.SHEETS.SETTINGS.CELLS[cellKey]).getValue();
+      if (!sheetName || !sheetName.trim()) {
+        throw new Error(`Некорректное имя листа в ячейке ${Settings.SHEETS.SETTINGS.CELLS[cellKey]}`);
+      }
+      const sheet = o.Get(sheetName.trim());
+      if (!sheet) {
+        throw new Error(`Лист ${sheetName.trim()} не найден`);
+      }
+      return sheet;
+    } catch (error) {
+      Logger.log(`Ошибка при получении листа из настроек (${cellKey}): ${error.toString()}`);
+      return null;
+    }
   };
 
   return o;
 })();
 
+//═══════════════════════════════════════════════════════════════════════════
+// ZM SETTINGS
+// Управление настройками Zen Money (токен, timestamp)
+//═══════════════════════════════════════════════════════════════════════════
 const zmSettings = {
-  getToken: function() {
+  getToken: function () {
     return sheetHelper.GetCellValue(Settings.SHEETS.SETTINGS.NAME, Settings.SHEETS.SETTINGS.CELLS.TOKEN);
   },
 
-  getTimestamp: function() {
+  getTimestamp: function () {
     return sheetHelper.GetCellValue(Settings.SHEETS.SETTINGS.NAME, Settings.SHEETS.SETTINGS.CELLS.TIMESTAMP);
   },
 
-  setTimestamp: function(value) {
-    const sheet = sheetHelper.Get(Settings.SHEETS.SETTINGS.NAME);
-    sheet.getRange(Settings.SHEETS.SETTINGS.CELLS.TIMESTAMP).setValue(value);
+  setTimestamp: function (value) {
+    try {
+      const sheet = sheetHelper.Get(Settings.SHEETS.SETTINGS.NAME);
+      if (sheet) {
+        sheet.getRange(Settings.SHEETS.SETTINGS.CELLS.TIMESTAMP).setValue(value);
+      }
+    } catch (error) {
+      Logger.log(`Ошибка при установке timestamp: ${error.toString()}`);
+    }
   }
 };
 
+//═══════════════════════════════════════════════════════════════════════════
+// ZM DATA
+// Функции для взаимодействия с API Zen Money
+//═══════════════════════════════════════════════════════════════════════════
 const zmData = (function () {
   function currentTimestamp() {
     return Math.round((new Date()).getTime() / 1000);
@@ -181,32 +264,40 @@ const zmData = (function () {
 
       return json;
     } catch (err) {
-      Logger.log("Error getting data");
-      Logger.log(err);
-
+      Logger.log("Ошибка при запросе к API Zen Money: " + err.toString());
       return {};
     }
   };
 
   o.RequestData = function () {
-    const ts = currentTimestamp();
-    var json = o.Request({
-      'currentClientTimestamp': ts,
-      'serverTimestamp': 0,
-    });
+    try {
+      const ts = currentTimestamp();
+      var json = o.Request({
+        'currentClientTimestamp': ts,
+        'serverTimestamp': 0,
+      });
 
-    return json;
+      return json;
+    } catch (error) {
+      Logger.log("Ошибка при получении данных: " + error.toString());
+      return {};
+    }
   };
 
   o.RequestForceFetch = function (items) {
-    const ts = currentTimestamp();
-    var json = o.Request({
-      'currentClientTimestamp': ts,
-      'serverTimestamp': ts,
-      'forceFetch': items,
-    });
-  
-    return json;
+    try {
+      const ts = currentTimestamp();
+      var json = o.Request({
+        'currentClientTimestamp': ts,
+        'serverTimestamp': ts,
+        'forceFetch': items,
+      });
+
+      return json;
+    } catch (error) {
+      Logger.log("Ошибка при принудительной загрузке данных: " + error.toString());
+      return {};
+    }
   };
 
   return o;
