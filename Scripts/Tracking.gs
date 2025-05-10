@@ -296,7 +296,7 @@ const Tracking = (function() {
   // ИНТЕРФЕЙС МЕНЮ
   // Функции для добавления пунктов управления триггерами в меню таблицы
   //═══════════════════════════════════════════════════════════════════════════
-  function addTrackingMenuItems(importMenu) {
+  function addMenuItems(importMenu) {
     return importMenu
       .addSeparator()
       .addItem('Setup Tracking Triggers', 'Tracking.createTriggers')
@@ -312,6 +312,6 @@ const Tracking = (function() {
     deleteTriggers,
     handleOnEdit,
     handleOnChange,
-    addTrackingMenuItems
+    addMenuItems
   };
 })();
