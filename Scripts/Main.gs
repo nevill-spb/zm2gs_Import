@@ -42,29 +42,30 @@ function createMenu() {
       .addItem('Update Dictionaries', 'doUpdateDictionaries')
       .addSeparator();
 
-    // Добавляем подменю для каждого модуля
-    addSubMenu(mainMenu, 'Export', Export, [
-      { name: "Full Export", func: "doFullExport" },
-      { name: "Incremental Export", func: "doIncrementalExport" },
-      { name: "Prepare Changes Sheet", func: "prepareChangesSheet" },
-      { name: "Apply Changes to Data Sheet", func: "applyChangesToDataSheet" }
-    ]);
+    // Добавляем подменю для каждого модуля с кастомными именами
+    addSubMenu(mainMenu, 'Экспорт', Export, [
+      { name: "Полный экспорт", func: "doFullExport" },
+      { name: "Инкрементальный экспорт", func: "doIncrementalExport" },
+      { name: "Подготовить лист изменений", func: "prepareChangesSheet" },
+      { name: "Применить изменения", func: "applyChangesToDataSheet" }
+    ], [], 'Export');
 
-    addSubMenu(mainMenu, 'Import', Import, [
-      { name: "Partial Import", func: "doUpdate" }
-    ], [Tracking, Validation]);
+    // Оставляем extraModules как есть - [Tracking, Validation]
+    addSubMenu(mainMenu, 'Импорт', Import, [
+      { name: "Частичный импорт", func: "doUpdate" }
+    ], [Tracking, Validation], 'Import');
 
-    addSubMenu(mainMenu, 'Setup categories', Categories, [
-      { name: "Load", func: "doLoad" },
-      { name: "Save", func: "doSave" },
-      { name: "Partial", func: "doPartial" }
-    ]);
+    addSubMenu(mainMenu, 'Настройка категорий', Categories, [
+      { name: "Загрузить", func: "doLoad" },
+      { name: "Сохранить", func: "doSave" },
+      { name: "Частично", func: "doPartial" }
+    ], [], 'Categories');
 
-    addSubMenu(mainMenu, 'Setup accounts', Accounts, [
-      { name: "Load", func: "doLoad" },
-      { name: "Save", func: "doSave" },
-      { name: "Partial", func: "doPartial" }
-    ]);
+    addSubMenu(mainMenu, 'Настройка счетов', Accounts, [
+      { name: "Загрузить", func: "doLoad" },
+      { name: "Сохранить", func: "doSave" },
+      { name: "Частично", func: "doPartial" }
+    ], [], 'Accounts');
 
     mainMenu.addToUi();
   } catch (error) {
@@ -72,10 +73,16 @@ function createMenu() {
   }
 }
 
-function addSubMenu(mainMenu, menuName, module, items, extraModules = []) {
+function addSubMenu(mainMenu, menuName, module, items, extraModules = [], moduleName = null) {
   if (typeof module !== 'undefined') {
     const subMenu = SpreadsheetApp.getUi().createMenu(menuName);
-    items.forEach(item => subMenu.addItem(item.name, `${module.name}.${item.func}`));
+    
+    const moduleNameForPath = moduleName || menuName;
+    
+    items.forEach(item => {
+      const functionPath = `${moduleNameForPath}.${item.func}`;
+      subMenu.addItem(item.name, functionPath);
+    });
 
     extraModules.forEach(extraModule => {
       if (typeof extraModule !== 'undefined' && typeof extraModule.addMenuItems === 'function') {
