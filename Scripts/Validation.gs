@@ -154,17 +154,17 @@ const Validation = (function() {
     }
   }
 
-  function addValidationMenuItems(importMenu) {    
-    return importMenu    
+  function addMenuItems(importMenu) {  
+    return importMenu  
       .addSeparator()  
       .addItem("Setup Validation", "Validation.setupValidation")  
-      .addItem("Clear Validation", "Validation.clearAllValidation");    
+      .addItem("Clear Validation", "Validation.clearAllValidation");  
   }
 
   // Публичный интерфейс
   return {
     setupValidation,
     clearAllValidation,
-    addValidationMenuItems
+    addMenuItems
   };
 })();
