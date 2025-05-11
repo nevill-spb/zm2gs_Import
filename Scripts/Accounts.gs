@@ -1,5 +1,32 @@
 const Accounts = (function () {
   //═══════════════════════════════════════════════════════════════════════════
+  // КОНСТАНТЫ
+  //═══════════════════════════════════════════════════════════════════════════
+  const UPDATE_MODES = {
+    SAVE: {
+      id: 'SAVE',
+      description: 'полное обновление',
+      logType: 'UPDATE_ACCOUNTS'
+    },
+    PARTIAL: {
+      id: 'PARTIAL',
+      description: 'частичное обновление',
+      logType: 'UPDATE_ACCOUNTS'
+    },
+    REPLACE: {
+      id: 'REPLACE',
+      description: 'замену',
+      logType: 'REPLACE_ACCOUNTS'
+    }
+  };
+
+  // Специальный счёт "Долги" (debt) — его ID всегда сохраняется, он не удаляется и не создаётся заново
+  const DEBT_ACCOUNT = {
+    title: 'Долги',
+    type: 'debt'
+  };
+
+  //═══════════════════════════════════════════════════════════════════════════
   // ИНИЦИАЛИЗАЦИЯ
   //═══════════════════════════════════════════════════════════════════════════
   const sheet = sheetHelper.GetSheetFromSettings('ACCOUNTS_SHEET');
@@ -16,8 +43,7 @@ const Accounts = (function () {
   //═══════════════════════════════════════════════════════════════════════════
   // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
   //═══════════════════════════════════════════════════════════════════════════
-  
-  // Парсеры
+
   function parseBool(value) {
     return value === true || value === "TRUE";
   }
@@ -36,8 +62,7 @@ const Accounts = (function () {
   //═══════════════════════════════════════════════════════════════════════════
   // ФУНКЦИИ РАБОТЫ С ДАННЫМИ
   //═══════════════════════════════════════════════════════════════════════════
-  
-  // Построение строки данных по полям из Settings
+
   function buildRow(account) {
     return Settings.ACCOUNT_FIELDS.map(field => {
       switch (field.id) {
@@ -66,7 +91,6 @@ const Accounts = (function () {
     });
   }
 
-  // Подготовка данных аккаунтов для записи в лист
   function prepareData(json) {
     if (!('account' in json)) {
       SpreadsheetApp.getActive().toast('Нет данных об аккаунтах', 'Предупреждение');
@@ -88,39 +112,32 @@ const Accounts = (function () {
   // ФУНКЦИИ РАБОТЫ С ЛИСТОМ
   //═══════════════════════════════════════════════════════════════════════════
 
-  // Запись данных в лист
   function writeDataToSheet(data) {
-    // Очистка листа перед записью
     sheet.clearContents();
     sheet.clearFormats();
 
-    // Заголовки из Settings
     const headers = Settings.ACCOUNT_FIELDS.map(f => f.title);
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
 
     if (data.length > 0) {
       sheet.getRange(2, 1, data.length, data[0].length).setValues(data);
 
-      // Список id булевых полей, для которых нужны чекбоксы
       const boolFields = [
-        "inBalance", "private", "savings", "archive", 
+        "inBalance", "private", "savings", "archive",
         "enableCorrection", "enableSMS", "capitalization",
         "delete", "modify"
       ];
 
-      // Вставляем чекбоксы по каждой колонке
       boolFields.forEach(fieldId => {
         const colIndex = fieldIndex[fieldId];
         if (colIndex === undefined) return;
         sheet.getRange(2, colIndex + 1, data.length, 1).insertCheckboxes();
       });
 
-      // Очищаем лишние чекбоксы и валидации
       clearExtraRows(data.length, boolFields);
     }
   }
 
-  // Очистка лишних строк (только для чекбокс-колонок)
   function clearExtraRows(dataLength, boolFields) {
     const boolCols = boolFields.map(id => fieldIndex[id]).filter(i => i !== undefined);
     if (boolCols.length > 0) {
@@ -141,7 +158,6 @@ const Accounts = (function () {
   // ФУНКЦИИ СОЗДАНИЯ И ОБНОВЛЕНИЯ АККАУНТОВ
   //═══════════════════════════════════════════════════════════════════════════
 
-  // Создание объекта аккаунта из строки данных
   function createAccountFromRow(row, i, ts, accounts, idMap, userReverseMap, instrumentReverseMap) {
     const oldAccountId = row[fieldIndex.id];
     const title = row[fieldIndex.title];
@@ -183,18 +199,15 @@ const Accounts = (function () {
     account.company = row[fieldIndex.company] || null;
     account.enableCorrection = parseBool(row[fieldIndex.enableCorrection]);
     account.balanceCorrectionType = row[fieldIndex.balanceCorrectionType] || "request";
-    account.startDate = null;
-    const startDateValue = row[fieldIndex.startDate];
-    if (startDateValue instanceof Date) {
-      const yyyy = startDateValue.getFullYear();
-      const mm = String(startDateValue.getMonth() + 1).padStart(2, '0');
-      const dd = String(startDateValue.getDate()).padStart(2, '0');
-      account.startDate = `${yyyy}-${mm}-${dd}`;
-    }
+    account.startDate = row[fieldIndex.type] === 'deposit'  // обработка даты только для депозитов
+      ? new Date(row[fieldIndex.startDate] || Date.now()).toISOString().split('T')[0]  
+      : null;
     account.capitalization = parseBool(row[fieldIndex.capitalization]);
     account.percent = parseNumber(row[fieldIndex.percent]);
     account.changed = ts;
-    account.syncID = row[fieldIndex.syncID] || null;
+    account.syncID = (oldAccountId && accounts.find(a => a.id === oldAccountId))   
+      ? (row[fieldIndex.syncID] || null)   
+      : null; // только для существующих аккаунтов    account.enableSMS = parseBool(row[fieldIndex.enableSMS]);
     account.enableSMS = parseBool(row[fieldIndex.enableSMS]);
     account.endDateOffset = row[fieldIndex.endDateOffset] || null;
     account.endDateOffsetInterval = row[fieldIndex.endDateOffsetInterval] || null;
@@ -205,9 +218,28 @@ const Accounts = (function () {
     return { account };
   }
 
-  // Обновление аккаунтов (полное и частичное)
-  function updateAccounts(values, dictionaries, isPartial = false) {
+  //═══════════════════════════════════════════════════════════════════════════
+  // ГЛАВНАЯ ФУНКЦИЯ ОБНОВЛЕНИЯ/ЗАМЕНЫ СЧЕТОВ
+  //═══════════════════════════════════════════════════════════════════════════
+
+  function doUpdate(mode) {
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      const msg = "Нет данных для обновления счетов";
+      Logger.log(msg);
+      SpreadsheetApp.getActive().toast(msg, 'Предупреждение');
+      return;
+    }
+
+    SpreadsheetApp.getActive().toast(`Начинаем ${mode.description} счетов...`, 'Обновление');
+    Dictionaries.loadDictionariesFromSheet();
+    const values = sheet.getRange(2, 1, lastRow - 1, Settings.ACCOUNT_FIELDS.length).getValues();
+    updateAccounts(values, Dictionaries, mode);
+  }
+
+  function updateAccounts(values, dictionaries, mode) {
     try {
+      // Запрос данных с сервера
       const json = zmData.RequestForceFetch(['account']);
       if (!('account' in json)) {
         SpreadsheetApp.getActive().toast('Нет данных об аккаунтах', 'Предупреждение');
@@ -216,31 +248,152 @@ const Accounts = (function () {
       const accounts = json['account'] || [];
       const ts = Math.floor(Date.now() / 1000);
 
-      const newAccounts = [];
-      const deletionRequests = [];
-      const deletedTitles = [];
-      const idMap = {};
-      const newIds = Array(values.length).fill(null);
+      // Находим существующий счёт "Долги"
+      const existingDebtAccount = accounts.find(acc =>
+        acc.title === DEBT_ACCOUNT.title && acc.type === DEBT_ACCOUNT.type
+      );
 
-      // Первый проход: определяем новые ID
+      // Подсчёт изменений
+      const changes = {
+        new: 0,
+        modified: 0,
+        deleted: 0,
+        processedIds: new Set(),
+        idMap: {}
+      };
+
+      // Подготовка обратных словарей
+      const userReverseMap = Object.fromEntries(
+        Object.entries(dictionaries.users || {})
+          .map(([id, login]) => [login, id])
+      );
+      const instrumentReverseMap = Object.fromEntries(
+        Object.entries(dictionaries.instruments || {})
+          .map(([id, shortTitle]) => [shortTitle, id])
+      );
+
+      // Первый проход: анализ изменений и формирование idMap
       for (let i = 0; i < values.length; i++) {
         const row = values[i];
-        if (isPartial && !parseBool(row[fieldIndex.modify])) continue;
+        if (mode.id === UPDATE_MODES.PARTIAL.id && !parseBool(row[fieldIndex.modify])) continue;
 
         const oldAccountId = row[fieldIndex.id];
         const title = row[fieldIndex.title];
+        const type = row[fieldIndex.type];
+        const deleteFlag = parseBool(row[fieldIndex.delete]);
+
         if (!title || typeof title !== 'string' || title.trim() === '') continue;
 
-        if (!oldAccountId || !accounts.find(a => a.id === oldAccountId)) {
-          const newId = Utilities.getUuid().toLowerCase();
-          idMap[oldAccountId || `new_${i}`] = newId;
-          newIds[i] = newId;
+        // Особая обработка счёта "Долги"
+        if (title === DEBT_ACCOUNT.title && type === DEBT_ACCOUNT.type) {
+          changes.modified++;
+          // Используем ID существующего счёта "Долги" или сохраняем текущий
+          const debtId = existingDebtAccount ? existingDebtAccount.id : oldAccountId;
+          changes.idMap[oldAccountId || `new_${i}`] = debtId;
+          changes.processedIds.add(debtId);
+          continue;
+        }
+
+        if (mode.id === UPDATE_MODES.REPLACE.id) {
+          // В режиме REPLACE считаем удалённые как отсутствующие старые счета
+          if (!oldAccountId || !accounts.find(a => a.id === oldAccountId)) {
+            changes.new++;
+            changes.idMap[oldAccountId || `new_${i}`] = Utilities.getUuid().toLowerCase();
+          } else {
+            changes.modified++;
+            changes.idMap[oldAccountId] = oldAccountId;
+            changes.processedIds.add(oldAccountId);
+          }
         } else {
-          idMap[oldAccountId] = oldAccountId;
+          // В режимах SAVE/PARTIAL
+          if (!oldAccountId) {
+            // Счета без ID всегда считаются новыми, игнорируя флажок "Удалить"
+            changes.new++;
+            changes.idMap[`new_${i}`] = Utilities.getUuid().toLowerCase();
+          } else {
+            // Для существующих счетов учитываем флажок "Удалить"
+            if (deleteFlag) {
+              changes.deleted++;
+              changes.processedIds.add(oldAccountId); // Чтобы не учитывать как "новые"
+            } else {
+              if (!accounts.find(a => a.id === oldAccountId)) {
+                changes.new++;
+                changes.idMap[oldAccountId] = Utilities.getUuid().toLowerCase();
+              } else {
+                changes.modified++;
+                changes.idMap[oldAccountId] = oldAccountId;
+                changes.processedIds.add(oldAccountId);
+              }
+            }
+          }
         }
       }
+      if (mode.id === UPDATE_MODES.REPLACE.id) {
+        // В режиме REPLACE считаем удаляемые счета (кроме "Долги")
+        changes.deleted = accounts.filter(acc =>
+          !changes.processedIds.has(acc.id) &&
+          !(acc.title === DEBT_ACCOUNT.title && acc.type === DEBT_ACCOUNT.type)
+        ).length;
+      }
 
-      // Обновляем ID в таблице
+      // Определяем, выбран ли счёт DEBT_ACCOUNT в зависимости от режима
+      let isDebtAccountSelected = false;
+      if (mode.id === UPDATE_MODES.PARTIAL.id) {
+        isDebtAccountSelected = values.some(row =>
+          parseBool(row[fieldIndex.modify]) && // + флажок modify
+          row[fieldIndex.title] === DEBT_ACCOUNT.title &&
+          row[fieldIndex.type] === DEBT_ACCOUNT.type
+        );
+      } else {
+        isDebtAccountSelected = values.some(row =>
+          row[fieldIndex.title] === DEBT_ACCOUNT.title &&
+          row[fieldIndex.type] === DEBT_ACCOUNT.type
+        );
+      }
+
+      // Формируем сообщение для подтверждения
+      const confirmLines = [];
+      if (changes.new > 0) {
+        confirmLines.push(`Будет создано новых счетов: ${changes.new}`);
+      }
+      if (changes.modified > 0) {
+        // Не считаем счёт "Долги" как модифицированный
+        const modifiedCount = changes.modified - (isDebtAccountSelected ? 1 : 0);
+        if (modifiedCount > 0) {
+          confirmLines.push(`Будет изменено счетов: ${modifiedCount}`);
+        }
+      }
+      if (changes.deleted > 0) {
+        confirmLines.push(`Будет удалено счетов: ${changes.deleted}`);
+      }
+
+      const confirmMessage =
+        confirmLines.length > 0
+          ? isDebtAccountSelected
+            ? `За исключением счёта "${DEBT_ACCOUNT.title}":\n${confirmLines.join('\n')}`
+            : confirmLines.join('\n')
+          : isDebtAccountSelected
+            ? `За исключением счёта "${DEBT_ACCOUNT.title}":\nСчетов для изменения не выбрано`
+            : 'Счетов для изменения не выбрано';
+
+      const ui = SpreadsheetApp.getUi();
+      const response = ui.alert(
+        'Подтверждение',
+        `${confirmMessage}\n\nПродолжить?`,
+        ui.ButtonSet.YES_NO
+      );
+      if (response !== ui.Button.YES) {
+        SpreadsheetApp.getActive().toast('Операция отменена', 'Информация');
+        return;
+      }
+
+      // Обновляем ID в таблице для новых счетов
+      const newIds = Array(values.length).fill(null);
+      for (let i = 0; i < values.length; i++) {
+        const oldId = values[i][fieldIndex.id];
+        const newId = changes.idMap[oldId || `new_${i}`];
+        if (newId !== oldId) newIds[i] = newId;
+      }
       if (newIds.some(id => id !== null)) {
         const idColumnRange = sheet.getRange(2, fieldIndex.id + 1, values.length, 1);
         const idColumnValues = idColumnRange.getValues();
@@ -250,28 +403,20 @@ const Accounts = (function () {
         idColumnRange.setValues(idColumnValues);
       }
 
-      // Обратные словари для преобразования названий в ID
-      const userReverseMap = Object.fromEntries(
-        Object.entries(dictionaries.users || {})
-          .map(([id, login]) => [login, id])
-      );
-      
-      const instrumentReverseMap = Object.fromEntries(
-        Object.entries(dictionaries.instruments || {})
-          .map(([id, shortTitle]) => [shortTitle, id])
-      );
+      // Второй проход: создание объектов для обновления
+      const newAccounts = [];
+      const deletionRequests = [];
+      const deletedTitles = [];
 
-      // Второй проход: создаем/обновляем аккаунты
       for (let i = 0; i < values.length; i++) {
         const row = values[i];
-        if (isPartial && !parseBool(row[fieldIndex.modify])) continue;
+        if (mode.id === UPDATE_MODES.PARTIAL.id && !parseBool(row[fieldIndex.modify])) continue;
 
-        const result = createAccountFromRow(row, i, ts, accounts, idMap, userReverseMap, instrumentReverseMap);
+        const result = createAccountFromRow(row, i, ts, accounts, changes.idMap, userReverseMap, instrumentReverseMap);
         if (!result) continue;
 
         if (result.deletion) {
           deletionRequests.push(result.deletion);
-          // Сохраняем название удаляемого счета
           const title = row[fieldIndex.title];
           if (title) deletedTitles.push(title);
         } else if (result.account) {
@@ -279,15 +424,25 @@ const Accounts = (function () {
         }
       }
 
-      // Предупреждение об удалении счетов
-      if (deletedTitles.length > 0) {
-        const deletionMsg = deletedTitles.length === 1
-          ? `Будет удалён счёт: ${deletedTitles[0]}`
-          : `Будут удалены счета:\n${deletedTitles.slice(0, 5).join('\n')}${
-              deletedTitles.length > 5 ? `\n...и еще ${deletedTitles.length - 5}` : ''
-            }`;
-        SpreadsheetApp.getActive().toast(deletionMsg, 'Удаление счетов');
-        Utilities.sleep(2000);
+      // В режиме замены добавляем запросы на удаление для лишних счетов (кроме "Долги")
+      if (mode.id === UPDATE_MODES.REPLACE.id) {
+        const accountsToDelete = accounts
+          .filter(acc =>
+            !changes.processedIds.has(acc.id) &&
+            !(acc.title === DEBT_ACCOUNT.title && acc.type === DEBT_ACCOUNT.type)
+          )
+          .map(acc => ({
+            id: acc.id,
+            object: 'account',
+            stamp: ts,
+            user: acc.user
+          }));
+
+        deletionRequests.push(...accountsToDelete);
+        accountsToDelete.forEach(del => {
+          const acc = accounts.find(a => a.id === del.id);
+          if (acc && acc.title) deletedTitles.push(acc.title);
+        });
       }
 
       // Отправляем изменения на сервер
@@ -298,21 +453,16 @@ const Accounts = (function () {
         };
         if (newAccounts.length > 0) data.account = newAccounts;
         if (deletionRequests.length > 0) data.deletion = deletionRequests;
+
         SpreadsheetApp.getActive().toast('Отправляем изменения на сервер...', 'Обновление');
         const result = zmData.Request(data);
-        Logger.log(`Результат ${isPartial ? 'частичного' : 'полного'} обновления счетов: ${JSON.stringify(result)}`);
+
         if (typeof Logs !== 'undefined' && Logs.logApiCall) {
-          Logs.logApiCall("UPDATE_ACCOUNTS", data, result);
+          Logs.logApiCall(mode.logType, data, result);
         }
-        SpreadsheetApp.getActive().toast(
-          `Обновление завершено:\n` +
-          `Новых/изменённых: ${newAccounts.length}\n` +
-          `Удалено: ${deletionRequests.length}`,
-          'Успех'
-        );
 
         // Сброс флагов modify после частичного обновления
-        if (isPartial) {
+        if (mode.id === UPDATE_MODES.PARTIAL.id) {
           const modifyColumn = fieldIndex.modify + 1;
           for (let i = 0; i < values.length; i++) {
             if (parseBool(values[i][fieldIndex.modify])) {
@@ -325,6 +475,24 @@ const Accounts = (function () {
       } else {
         SpreadsheetApp.getActive().toast('Нет изменений для обработки', 'Информация');
       }
+
+      // Подсчитываем количество реально изменённых счетов (без "Долги")
+      const actualNewModified = newAccounts.filter(acc =>
+        !(acc.title === DEBT_ACCOUNT.title && acc.type === DEBT_ACCOUNT.type)
+      ).length;
+
+      // Подсчитываем количество реально удалённых счетов (без "Долги")
+      const actualDeleted = deletionRequests.filter(del => {
+        const acc = accounts.find(a => a.id === del.id);
+        return !(acc && acc.title === DEBT_ACCOUNT.title && acc.type === DEBT_ACCOUNT.type);
+      }).length;
+
+      SpreadsheetApp.getActive().toast(
+        `${mode.id === UPDATE_MODES.REPLACE.id ? 'Замена' : 'Обновление'} завершено:\n` +
+        `Новых/изменённых: ${actualNewModified}\n` +
+        `Удалено: ${actualDeleted}`,
+        'Успех'
+      );
     } catch (error) {
       Logger.log("Ошибка при обновлении счетов: " + error.toString());
       SpreadsheetApp.getActive().toast("Ошибка: " + error.toString(), "Ошибка");
@@ -335,7 +503,6 @@ const Accounts = (function () {
   // ПУБЛИЧНЫЕ МЕТОДЫ
   //═══════════════════════════════════════════════════════════════════════════
 
-  // Загрузка аккаунтов
   function doLoad() {
     Dictionaries.loadDictionariesFromSheet();
     const json = zmData.RequestForceFetch(['account']);
@@ -345,44 +512,10 @@ const Accounts = (function () {
     prepareData(json);
   }
 
-  // Полное обновление аккаунтов
-  function doSave() {
-    const lastRow = sheet.getLastRow();
-    if (lastRow < 2) {
-      const msg = "Нет данных для обновления счетов";
-      Logger.log(msg);
-      SpreadsheetApp.getActive().toast(msg, 'Предупреждение');
-      return;
-    }
-
-    SpreadsheetApp.getActive().toast('Начинаем полное обновление счетов...', 'Обновление');
-    Dictionaries.loadDictionariesFromSheet();
-    const values = sheet.getRange(2, 1, lastRow - 1, Settings.ACCOUNT_FIELDS.length).getValues();
-    updateAccounts(values, Dictionaries, false); // Передаем данные с флагом isPartial = false
-  }
-
-  // Частичное обновление аккаунтов
-  function doPartial() {
-    const lastRow = sheet.getLastRow();
-    if (lastRow < 2) {
-      const msg = "Нет данных для обновления счетов";
-      Logger.log(msg);
-      SpreadsheetApp.getActive().toast(msg, 'Предупреждение');
-      return;
-    }
-
-    SpreadsheetApp.getActive().toast('Начинаем частичное обновление счетов...', 'Обновление');
-    Dictionaries.loadDictionariesFromSheet();
-    const values = sheet.getRange(2, 1, lastRow - 1, Settings.ACCOUNT_FIELDS.length).getValues();
-    updateAccounts(values, Dictionaries, true); // Передаем данные с флагом isPartial = true
-  }
-
-  // Регистрация обработчика полной синхронизации
-  fullSyncHandlers.push(prepareData);
-
   return {
     doLoad,
-    doSave,
-    doPartial
+    doSave: () => doUpdate(UPDATE_MODES.SAVE),
+    doPartial: () => doUpdate(UPDATE_MODES.PARTIAL),
+    doReplace: () => doUpdate(UPDATE_MODES.REPLACE)
   };
 })();
