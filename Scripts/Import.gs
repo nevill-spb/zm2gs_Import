@@ -1,4 +1,10 @@
 const Import = (function () {
+  const sheet = sheetHelper.GetSheetFromSettings('IMPORT_SHEET');
+  if (!sheet) {
+    Logger.log("Лист с данными не найден");
+    SpreadsheetApp.getActive().toast('Лист с данными не найден', 'Ошибка');
+    return;
+  }
 
   // Функция для преобразования номера столбца в букву
   function columnToLetter(column) {
@@ -280,7 +286,9 @@ const Import = (function () {
       transaction: transactions
     };
     const result = zmData.Request(requestPayload);
-    Logs.logApiCall("Update Transactions", requestPayload, result);
+    if (typeof Logs !== 'undefined' && Logs.logApiCall) {  
+      Logs.logApiCall("IMPORT_TRANSACTIONS", requestPayload, result);
+    }
     if (result.error) {
       throw new Error(`API Error: ${result.error}`);
     }
@@ -366,9 +374,6 @@ const Import = (function () {
   // Основная функция импорта
   function doUpdate() {
     try {
-      const sheet = sheetHelper.GetSheetFromSettings('IMPORT_SHEET');  
-      if (!sheet) throw new Error("Лист импорта не найден");
-      
       const data = sheet.getDataRange().getValues();
       if (data.length < 2) throw new Error("Нет данных для импорта");
 
@@ -497,7 +502,9 @@ const Import = (function () {
 
     } catch (error) {
       Logger.log("Ошибка при импорте: " + error.toString());
-      Logs.logApiCall("IMPORT_ERROR", {}, error.toString());
+      if (typeof Logs !== 'undefined' && Logs.logApiCall) {  
+        Logs.logApiCall("IMPORT_ERROR", {}, error.toString());
+      }
       SpreadsheetApp.getActive().toast('Ошибка: ' + error.toString(), 'Ошибка импорта');
     }
   }
