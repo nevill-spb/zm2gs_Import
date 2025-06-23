@@ -17,32 +17,38 @@ const Export = (function () {
     return columns;
   })();
 
+  const tagTitleCache = {};
+
+  // Вспомогательная функция для обработки категорий и тегов
+  function preprocessTags(transactions) {
+    if (!transactions) return;
+
+    transactions.forEach(t => {
+      if (!t.tag || !Array.isArray(t.tag) || t.tagsProcessed) return;
+      
+      const titles = [];
+      for (const tagId of t.tag) {
+        if (!tagId) continue;
+        const title = tagTitleCache[tagId] ?? 
+                    (tagTitleCache[tagId] = Dictionaries.getTagTitle(tagId) || "");
+        if (title) titles.push(title);
+      }
+      
+      t.tagMain = Settings.TagMode === Settings.TAG_MODES.MULTIPLE_COLUMNS 
+          ? titles[0] || ""
+          : titles.join(" | ");
+      t.tag1 = titles[1] || "";
+      t.tag2 = titles[2] || "";
+      t.tagsProcessed = true;
+    });
+  }
+
   // Вспомогательная функция для получения значения с расшифровкой по id поля
   function getDecodedValue(t, field) {  
     switch (field.id) {  
-      case "tag":  
-      case "tag1":  
-      case "tag2":  
-        if (!t.tag) return "";  
-        const tagTitles = t.tag.map(tagId => {  
-          const title = Dictionaries.getTagTitle(tagId) || "";  
-          return title;  
-        }).filter(Boolean);  
-    
-        const tagMode = Settings.TagMode; 
-          
-        if (tagMode === Settings.TAG_MODES.MULTIPLE_COLUMNS) {  
-          // Режим отдельных столбцов  
-          switch (field.id) {  
-            case "tag": return tagTitles[0] || "";  
-            case "tag1": return tagTitles[1] || "";  
-            case "tag2": return tagTitles[2] || "";  
-            default: return "";  
-          }  
-        } else {  
-          // Режим одной строки  
-          return field.id === "tag" ? tagTitles.join(" | ") : "";  
-        }  
+      case "tag":  return t.tagMain;
+      case "tag1": return t.tag1;
+      case "tag2": return t.tag2;
       case "incomeAccount":  
         return Dictionaries.getAccountTitle(t.incomeAccount) || "";  
       case "outcomeAccount":  
@@ -93,15 +99,24 @@ const Export = (function () {
       return;
     }
 
-    // Сортируем по дате по убыванию (от новых к старым)  
     transactions.sort((a, b) => {  
+      // Сначала сортируем по дате операции (по убыванию)
       const dateA = new Date(a.date).getTime() || 0;  
       const dateB = new Date(b.date).getTime() || 0;  
-      return dateB - dateA;
+      if (dateB !== dateA) {
+        return dateB - dateA;
+      }
+      
+      // Если даты операций равны, сортируем по дате создания (по убыванию)
+      const createdA = new Date(a.created).getTime() || 0;
+      const createdB = new Date(b.created).getTime() || 0;
+      return createdB - createdA;
     });
 
     // Обновляем справочники через модуль Dictionaries
     Dictionaries.updateDictionaries(json);
+    
+    preprocessTags(transactions);
 
     // Формируем строки с расшифровками в нужном порядке столбцов
     const data = transactions.map(t => Settings.TRANSACTION_FIELDS.map(field => getDecodedValue(t, field)));
@@ -128,7 +143,9 @@ const Export = (function () {
       
       const requestPayload = ["transaction", "account", "merchant", "instrument", "tag", "user"];
       const json = zmData.RequestForceFetch(requestPayload);
-      Logs.logApiCall("FETCH_TRANSACTIONS", requestPayload, JSON.stringify(json));
+      if (typeof Logs !== 'undefined' && Logs.logApiCall) {  
+        Logs.logApiCall("EXPORT_TRANSACTIONS", requestPayload, JSON.stringify(json));
+      }
       prepareFullData(json);
       if (json.serverTimestamp) {
         zmSettings.setTimestamp(json.serverTimestamp);
@@ -136,7 +153,9 @@ const Export = (function () {
     } catch (error) {
       const errorMsg = "Ошибка при экспорте: " + error.toString();
       Logger.log(errorMsg);
-      Logs.logApiCall("FETCH_TRANSACTIONS_ERROR", {}, error.toString());
+      if (typeof Logs !== 'undefined' && Logs.logApiCall) {  
+        Logs.logApiCall("EXPORT_ERROR", {}, error.toString());
+      }
       SpreadsheetApp.getActive().toast(errorMsg, 'Ошибка');
     }
   }
@@ -168,7 +187,10 @@ const Export = (function () {
       };
       const json = zmData.Request(requestPayload);
 
-      Logs.logApiCall("FETCH_DIFF", requestPayload, JSON.stringify(json));
+      if (typeof Logs !== 'undefined' && Logs.logApiCall) {  
+        Logs.logApiCall("EXPORT_DIFF", requestPayload, JSON.stringify(json));
+      }
+
       if (!json || Object.keys(json).length === 0) {
         const msg = "Ошибка при получении diff: пустой ответ";
         Logger.log(msg);
@@ -220,6 +242,9 @@ const Export = (function () {
           newTransactions.push(t);
         }
       });
+
+      preprocessTags(deletedTransactions);
+      preprocessTags(activeTransactions);
 
       // Формируем данные и типы изменений
       const changesData = [];
