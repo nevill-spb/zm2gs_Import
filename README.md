@@ -3,9 +3,9 @@
 Данная серия скриптов предназначена для интеграции данных приложения Дзен Мани с Google Таблицами через экспорт и импорт транзакций, счетов и категорий.
 
 # Как использовать
-Создайте новый файл таблиц, или возьмите готовый [шаблон настроек](https://docs.google.com/spreadsheets/d/1tSTjqCeHK3t6BUOEQUnOXYQhDoTdJQWTZmOCuL_A1v4/edit?usp=sharing):
+Возьмите готовый [шаблон настроек](https://docs.google.com/spreadsheets/d/1tSTjqCeHK3t6BUOEQUnOXYQhDoTdJQWTZmOCuL_A1v4/edit?usp=sharing):
 
-На листе Settings выставьте токен в ячейку B1 (можно получить через [Zerro.app](https://zerro.app/token)), а также названия используемых листов.
+На листе Settings выставьте токен API в ячейку B1 (можно получить через [Zerro.app](https://zerro.app/token)), а также названия используемых листов.
 
 Зайдите в меню Extensions -> Apps Script, и последовательно скопируйте нужные вам скрипты через Files (+ Add a file) -> Script. Рекомендую начать с Settings, Main, Logs, Dictionaries и Export - в таком порядке. Порядок важен, Settings должнен идти первым в списке, затем Main, затем остальные.
 
