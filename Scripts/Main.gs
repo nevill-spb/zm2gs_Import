@@ -32,66 +32,66 @@ function onOpen(e) {
 
 //═══════════════════════════════════════════════════════════════════════════
 // МЕНЮ
-// Функции для создания и управления меню Zen Money
+// Функции для создания и управления меню Дзен Мани
 //═══════════════════════════════════════════════════════════════════════════
 function createMenu() {
-  const ui = SpreadsheetApp.getUi();
-  const menu = ui.createMenu('Дзен Мани');
-  
-  // Всегда добавляем основные пункты
-  menu
-    .addItem('Полная Синхронизация', 'doFullSync')
-    .addItem('Обновить Словари', 'doUpdateDictionaries');
-
-  // Добавляем подменю только если есть соответствующие функции
   try {
-    // Подменю Экспорт
-    if (typeof Export !== 'undefined') {
-      menu.addSeparator().addSubMenu(
-        ui.createMenu('Экспорт')
-          .addItem('Полный экспорт', 'Export.doFullExport')
-          .addItem('Инкрементальный экспорт', 'Export.doIncrementalExport')
-          .addItem('Подготовить лист изменений', 'Export.prepareChangesSheet')
-          .addItem('Применить изменения', 'Export.applyChangesToDataSheet')
-      );
-    }
+    const ui = SpreadsheetApp.getUi();
+    const mainMenu = ui.createMenu('Дзен Мани')
+      .addItem('Полная Синхронизация', 'doFullSync')
+      .addItem('Обновить Словари', 'doUpdateDictionaries')
+      .addSeparator();
 
-    // Подменю Импорт
-    if (typeof Import !== 'undefined') {
-      const importMenu = ui.createMenu('Импорт')
-        .addItem('Частичный импорт', 'Import.doUpdate');
-      
-      // Дополнительные пункты для Импорта
-      try { if (typeof Tracking !== 'undefined') Tracking.addMenuItems?.(importMenu); } catch(e) {}
-      try { if (typeof Validation !== 'undefined') Validation.addMenuItems?.(importMenu); } catch(e) {}
-      
-      menu.addSubMenu(importMenu);
-    }
+    addSubMenu(mainMenu, 'Экспорт', Export, [
+      { name: "Полный экспорт", func: "doFullExport" },
+      { name: "Инкрементальный экспорт", func: "doIncrementalExport" },
+      { name: "Подготовить лист изменений", func: "prepareChangesSheet" },
+      { name: "Применить изменения", func: "applyChangesToDataSheet" }
+    ], [], 'Export');
 
-    // Универсальная функция для добавления меню настроек
-    const addSettingsMenu = (title, moduleName) => {
-      try {
-        if (typeof eval(moduleName) !== 'undefined') {
-          menu.addSubMenu(
-            ui.createMenu(title)
-              .addItem('Загрузить', `${moduleName}.doLoad`)
-              .addItem('Сохранить', `${moduleName}.doSave`)
-              .addItem('Частично', `${moduleName}.doPartial`)
-              .addItem('Заменить', `${moduleName}.doReplace`)
-          );
-        }
-      } catch(e) {}
-    };
+    addSubMenu(mainMenu, 'Импорт', Import, [
+      { name: "Частичный импорт", func: "doUpdate" }
+    ], [Tracking, Validation], 'Import');
 
-    addSettingsMenu('Настройка категорий', 'Categories');
-    addSettingsMenu('Настройка счетов', 'Accounts');
+    addSubMenu(mainMenu, 'Настройка категорий', Categories, [
+      { name: "Загрузить", func: "doLoad" },
+      { name: "Сохранить", func: "doSave" },
+      { name: "Частично", func: "doPartial" },
+      { name: "Заменить", func: "doReplace" }
+    ], [], 'Categories');
 
-  } catch(e) {
-    Logger.log('Ошибка при создании подменю: ' + e.message);
+    addSubMenu(mainMenu, 'Настройка счетов', Accounts, [
+      { name: "Загрузить", func: "doLoad" },
+      { name: "Сохранить", func: "doSave" },
+      { name: "Частично", func: "doPartial" },
+      { name: "Заменить", func: "doReplace" }
+    ], [], 'Accounts');
+
+    mainMenu.addToUi();
+  } catch (error) {
+    Logger.log("Ошибка при создании меню: " + error.toString());
   }
+}
 
-  // Всегда добавляем меню, даже если нет подпунктов
-  menu.addToUi();
+function addSubMenu(mainMenu, menuName, module, items, extraModules = [], moduleName = null) {
+  if (typeof module !== 'undefined') {
+    const subMenu = SpreadsheetApp.getUi().createMenu(menuName);
+    
+    const moduleNameForPath = moduleName || menuName;
+    
+    items.forEach(item => {
+      const functionPath = `${moduleNameForPath}.${item.func}`;
+      subMenu.addItem(item.name, functionPath);
+    });
+
+    extraModules.forEach(extraModule => {
+      if (typeof extraModule !== 'undefined' && typeof extraModule.addMenuItems === 'function') {
+        extraModule.addMenuItems(subMenu);
+      }
+    });
+
+    mainMenu.addSubMenu(subMenu);
+  }
 }
 
 //═══════════════════════════════════════════════════════════════════════════
