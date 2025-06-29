@@ -5,21 +5,21 @@ const Dictionaries = (function () {
     return;
   }
 
-  // Внутренние объекты словарей
+  // Внутренние объекты справочников
   let accounts = {};
   let merchants = {};
   let instruments = {};
   let users = {};
   let tags = {};
 
-  // Обратные словари для быстрого поиска ID по названию
+  // Обратные справочники для быстрого поиска ID по названию
   let accountsRev = {};
   let merchantsRev = {};
   let instrumentsRev = {};
   let usersRev = {};
   let tagsRev = {};
 
-  // Обновление обратных словарей
+  // Получение обратных справочников
   function invertDictionary(dict) {
     const rev = {};
     for (const key in dict) {
@@ -30,18 +30,17 @@ const Dictionaries = (function () {
     return rev;
   }
 
-  // Сохранение словарей в лист "Справочники"
+  // Сохранение справочников в лист
   function saveDictionariesToSheet() {
     sheet.clearContents();
     sheet.getRange(1, 1, 1, 3).setValues([["type", "id", "title"]]);
 
-    // Вспомогательная функция для подготовки массива данных словаря
-    // Для instruments фильтруем только id 1,2,3,4  
-    const allowedCodes = new Set(Settings.ALLOWED_CURRENCY_CODES);
+    // Вспомогательная функция для подготовки массива данных справочника
+    const allowedCodes = new Set(Settings.ALLOWED_CURRENCY_CODES); // Валюты берём из листа настроек
     function prepareDictData(type, dict) {  
-      if (type === "instruments") {  
+      if (type === "instruments") {
         return Object.entries(dict)  
-          .filter(([id, title]) => allowedCodes.has(title))  
+          .filter(([title]) => allowedCodes.has(title))  
           .map(([id, title]) => [type, id, title]);  
       }  
       return Object.entries(dict).map(([id, title]) => [type, id, title]);  
@@ -59,7 +58,8 @@ const Dictionaries = (function () {
     if (allData.length > 0) {
       sheet.getRange(2, 1, allData.length, 3).setValues(allData);
     }
-    // Добавляем заголовки словарей в E1-H1  
+    /* 
+    //Добавляем заголовки словарей в E1-H1  
     const dictTypes = ["accounts", "tags", "merchants", "instruments"];  
     const headerRange = sheet.getRange(1, 5, 1, dictTypes.length); // E1:H1  
     headerRange.setValues([dictTypes]);  
@@ -70,15 +70,16 @@ const Dictionaries = (function () {
     );  
     const formulaRange = sheet.getRange(2, 5, 1, formulas.length); // E2:H2  
     formulaRange.setFormulas([formulas]);
+    */
   }
 
-  // Загрузка словарей из листа "Справочники"
+  // Загрузка справочников из листа "Справочники"
   function loadDictionariesFromSheet() {
     try {
       const data = sheet.getDataRange().getValues();
 
       // Предполагается, что в листе есть заголовки и данные в формате Тип, ID, Название
-      // Собираем словари по типу
+      // Собираем справочники по типу
       accounts = {};
       merchants = {};
       instruments = {};
@@ -114,17 +115,15 @@ const Dictionaries = (function () {
         }
       }
 
-      // Создаём обратные словари
       updateReverseDictionaries();
-
       return getAllDictionaries();  
-      } catch (e) {  
-        Logger.log("Ошибка загрузки справочников: " + e.message);  
-        return null;  
-      }
+    } catch (e) {  
+      Logger.log("Ошибка загрузки справочников: " + e.message);  
+      return null;  
     }
+  }
 
-  // Обновление словарей из JSON (например, с API)
+  // Загрузка справочников из JSON (например, с API)
   function updateDictionaries(json) {
     if (!json) return;
 
@@ -175,7 +174,7 @@ const Dictionaries = (function () {
     return getAllDictionaries();
   }
 
-  // Обновление обратных словарей из JSON
+  // Обновление обратных справочников
   function updateReverseDictionaries() {
     accountsRev = invertDictionary(accounts);
     merchantsRev = invertDictionary(merchants);
@@ -194,11 +193,11 @@ const Dictionaries = (function () {
   }
 
   function getInstrumentId(title) {
-    return instrumentsRev[title] || null;
+    return Number(instrumentsRev[title]) || null;
   }
 
   function getUserId(login) {
-    return usersRev[login] || null;
+    return Number(usersRev[login]) || null;
   }
 
   function getTagId(title) {
@@ -226,7 +225,7 @@ const Dictionaries = (function () {
     return tags[id] || null;
   }
 
-  // Возвращает все словари (для загрузки в Import.DICTIONARIES)
+  // Возвращает все справочники (для загрузки в Import.DICTIONARIES)
   function getAllDictionaries() {
     return {
       accounts,
@@ -237,7 +236,7 @@ const Dictionaries = (function () {
     };
   }
 
-  // Возвращает все обратные словари (для загрузки в Import.DICTIONARIES)
+  // Возвращает все обратные справочники (для загрузки в Import.DICTIONARIES)
   function getAllReverseDictionaries () {  
     return {  
       accountsRev,  
