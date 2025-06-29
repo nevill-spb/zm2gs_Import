@@ -201,14 +201,22 @@ const sheetHelper = (function () {
   o.GetSheetFromSettings = function (cellKey) {
     try {
       const settingsSheet = o.Get(Settings.SHEETS.SETTINGS.NAME);
-      const sheetName = settingsSheet.getRange(Settings.SHEETS.SETTINGS.CELLS[cellKey]).getValue();
-      if (!sheetName || !sheetName.trim()) {
+      if (!settingsSheet) {
+        throw new Error("Лист настроек не найден");
+      }
+      
+      const cellValue = settingsSheet.getRange(Settings.SHEETS.SETTINGS.CELLS[cellKey]).getValue();
+      const sheetName = cellValue ? cellValue.toString().trim() : null;
+      
+      if (!sheetName) {
         throw new Error(`Некорректное имя листа в ячейке ${Settings.SHEETS.SETTINGS.CELLS[cellKey]}`);
       }
-      const sheet = o.Get(sheetName.trim());
+      
+      const sheet = o.Get(sheetName);
       if (!sheet) {
-        throw new Error(`Лист ${sheetName.trim()} не найден`);
+        throw new Error(`Лист ${sheetName} не найден`);
       }
+      
       return sheet;
     } catch (error) {
       Logger.log(`Ошибка при получении листа из настроек (${cellKey}): ${error.toString()}`);
