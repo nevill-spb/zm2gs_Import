@@ -51,6 +51,7 @@ const Categories = (function () {
     const idMap = {};
     const processedIds = new Set();
     const stats = { new: 0, modified: 0, deleted: 0 };
+    const tagsToDelete = [];
 
     for (let i = 0; i < values.length; i++) {
       const row = values[i];
@@ -66,6 +67,7 @@ const Categories = (function () {
       if (shouldDelete) {
         if (shouldModify && existsOnServer) {
           processedIds.add(currentId);
+          tagsToDelete.push(currentId);
           stats.deleted++;
         }
         continue; // Пропускаем все остальные случаи удаления
@@ -92,11 +94,14 @@ const Categories = (function () {
     // В режиме REPLACE удаляем всё, чего нет в таблице
     if (mode.id === UPDATE_MODES.REPLACE.id) {
       tags.forEach(tag => {
-        if (!processedIds.has(tag.id)) stats.deleted++;
+        if (!processedIds.has(tag.id)) {
+          tagsToDelete.push(tag.id);
+          stats.deleted++;
+        }
       });
     }
 
-    return { ...stats, idMap, processedIds };
+    return { ...stats, idMap, processedIds, tagsToDelete };
   }
 
   // Формирует строку для записи в лист из объекта категории, учитывая типы полей
@@ -155,6 +160,40 @@ const Categories = (function () {
 
     writeDataToSheet(data);
     if (showToast) SpreadsheetApp.getActive().toast(`Загружено ${data.length} категорий`, 'Информация');
+  }
+
+  // Проверяет транзакции, имеющие связи с категориями
+  function checkTransactionsWithTags(tagIds) {
+    try {
+      const json = zmData.RequestForceFetch(['transaction']);
+      if (!json.transaction || !Array.isArray(json.transaction)) {
+        Logger.log("Нет данных о транзакциях");
+        return null;
+      }
+
+      const affectedTransactions = json.transaction.filter(t => 
+        !t.deleted && t.tag && t.tag.some(tagId => tagIds.includes(tagId))
+      ).slice(0, 20); // Ограничиваем выборку для производительности
+
+      return affectedTransactions.length > 0 ? {
+        count: affectedTransactions.length,
+        sample: affectedTransactions.map(t => {
+          return `${t.date}${
+            t.income 
+              ? ` | ${Dictionaries.getAccountTitle(t.incomeAccount)}: +${t.income} ${Dictionaries.getInstrumentShortTitle(t.incomeInstrument)}` 
+              : t.outcome 
+                ? ` | ${Dictionaries.getAccountTitle(t.outcomeAccount)}: -${t.outcome} ${Dictionaries.getInstrumentShortTitle(t.outcomeInstrument)}` : ''
+          }${
+            t.merchant 
+              ? ` | ${Dictionaries.getMerchantTitle(t.merchant)}` 
+              : t.payee ? ` | ${t.payee}` : ''
+          }`;
+        })
+      } : null;
+    } catch (e) {
+      Logger.log("Ошибка при проверке транзакций: " + e.toString());
+      return null;
+    }
   }
 
   //═══════════════════════════════════════════════════════════════════════════
@@ -368,7 +407,7 @@ const Categories = (function () {
       const existingIds = new Set(tags.map(t => t.id));
       const tagsMap = new Map(tags.map(t => [t.id, t]));
 
-      const { idMap, processedIds, new: newCount, modified: modifiedCount, deleted: deletedCount } = generateIdMap(
+      const { idMap, processedIds, new: newCount, modified: modifiedCount, deleted: deletedCount, tagsToDelete } = generateIdMap(
         values,
         tags,
         mode,
@@ -378,7 +417,25 @@ const Categories = (function () {
       const confirmLines = [];
       if (newCount > 0) confirmLines.push(`Будет создано новых категорий: ${newCount}`);
       if (modifiedCount > 0) confirmLines.push(`Будет изменено категорий: ${modifiedCount}`);
-      if (deletedCount > 0) confirmLines.push(`Будет удалено категорий: ${deletedCount}`);
+      if (deletedCount > 0) {
+        confirmLines.push(`Будет удалено категорий: ${deletedCount}`);
+        
+        // Проверяем транзакции с удаляемыми категориями
+        if (tagsToDelete.length > 0) {
+          const transactionsInfo = checkTransactionsWithTags(tagsToDelete);
+          if (transactionsInfo) {
+            confirmLines.push(
+              `\nВНИМАНИЕ: Найдено ${transactionsInfo.count} транзакций с удаляемыми категориями.`,
+              `Примеры: \n${transactionsInfo.sample.slice(0, 3).join(';\n')}${
+                transactionsInfo.sample.length > 3 
+                  ? `\n...и ещё ${transactionsInfo.count - 3}` 
+                  : ''
+              }`,
+              `\nКатегории этих транзакций будут стёрты.`
+            );
+          }
+        }
+      }
 
       const confirmMessage = confirmLines.length > 0 ? confirmLines.join('\n') : 'Категорий для изменения не выбрано';
 
@@ -406,8 +463,8 @@ const Categories = (function () {
         updates.forEach(([id], i) => values[i][fieldIndex.id] = id);
       }
 
-      const deletionRequests = [];
-      const newTags = [];
+      const deleteRequests = [];
+      const modifyRequests = [];
       const deletedTitles = [];
 
       for (let i = 0; i < values.length; i++) {
@@ -416,10 +473,10 @@ const Categories = (function () {
         if (!result) continue;
 
         if (result.deletion) {
-          deletionRequests.push(result.deletion);
+          deleteRequests.push(result.deletion);
           deletedTitles.push(row[fieldIndex.title]);
         } else if (result.tag) {
-          newTags.push(result.tag);
+          modifyRequests.push(result.tag);
         }
       }
 
@@ -428,7 +485,7 @@ const Categories = (function () {
         tags
           .filter(tag => !processedIds.has(tag.id))
           .forEach(tag => {
-            deletionRequests.push({
+            deleteRequests.push({
               id: tag.id,
               object: 'tag',
               stamp: ts,
@@ -443,18 +500,19 @@ const Categories = (function () {
         const deletionMsg = deletedTitles.length === 1
           ? `Будет удалена категория: ${deletedTitles[0]}`
           : `Будут удалены категории:\n${deletedTitles.slice(0, 5).join(',\n')}${deletedTitles.length > 5 ? `\n...и еще ${deletedTitles.length - 5}` : ''}`;
+        Logger.log(`Cписок удаляемых категорий (${deletedTitles.length}):\n${deletedTitles.join(',\n')}`);          
         SpreadsheetApp.getActive().toast(deletionMsg, 'Удаление категорий');
         Utilities.sleep(2000);
       }
 
       // Отправка изменений
-      if (newTags.length > 0 || deletionRequests.length > 0) {
+      if (modifyRequests.length > 0 || deleteRequests.length > 0) {
         const data = {
           currentClientTimestamp: ts,
           serverTimestamp: ts
         };
-        if (newTags.length > 0) data.tag = newTags;
-        if (deletionRequests.length > 0) data.deletion = deletionRequests;
+        if (modifyRequests.length > 0) data.tag = modifyRequests;
+        if (deleteRequests.length > 0) data.deletion = deleteRequests;
 
         SpreadsheetApp.getActive().toast('Отправляем изменения на сервер...', 'Обновление');
         const result = zmData.Request(data);
@@ -476,8 +534,8 @@ const Categories = (function () {
 
         values.forEach((_, i) => {
           modifyValues[i][0] = parseBool(values[i][fieldIndex.modify]) && 
-                    (newTags.some(a => a.id === values[i][fieldIndex.id]) || 
-                    deletionRequests.some(d => d.id === values[i][fieldIndex.id]))
+                    (modifyRequests.some(a => a.id === values[i][fieldIndex.id]) || 
+                    deleteRequests.some(d => d.id === values[i][fieldIndex.id]))
                     ? false 
                     : modifyValues[i][0];
         });
@@ -492,8 +550,8 @@ const Categories = (function () {
         // Подсчёт реальных изменений
         SpreadsheetApp.getActive().toast(
         `${mode.id === UPDATE_MODES.REPLACE.id ? 'Замена' : 'Обновление'} завершено:\n` +
-        `Новых/изменённых: ${newTags.length}\n` +
-        `Удалено: ${deletionRequests.length}` +
+        `Новых/изменённых: ${modifyRequests.length}\n` +
+        `Удалено: ${deleteRequests.length}` +
         (errors.length > 0 ? `\nОшибок: ${errors.length}` : ''),
         'Успех'
       );
