@@ -40,7 +40,7 @@ const Dictionaries = (function () {
     function prepareDictData(type, dict) {  
       if (type === "instruments") {
         return Object.entries(dict)  
-          .filter(([title]) => allowedCodes.has(title))  
+          .filter(([id, title]) => allowedCodes.has(title))  
           .map(([id, title]) => [type, id, title]);  
       }  
       return Object.entries(dict).map(([id, title]) => [type, id, title]);  
