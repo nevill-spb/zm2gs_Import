@@ -469,17 +469,25 @@ const Categories = (function () {
           throw new Error('Пустой ответ сервера при обновлении категорий');
         }
 
-        //Ошибка
-        if (mode.id === UPDATE_MODES.PARTIAL.id) {
-          const modifyColumn = fieldIndex.modify + 1;
-          for (let i = 0; i < values.length; i++) {
-            if (parseBool(values[i][fieldIndex.modify])) {
-              sheet.getRange(i + 2, modifyColumn).setValue(false);
-            }
-          }
-        }
+        // Сброс флагов modify
+        const modifyColumn = fieldIndex.modify + 1;
+        const modifyRange = sheet.getRange(2, modifyColumn, values.length, 1);
+        const modifyValues = modifyRange.getValues();
 
-        doLoad(false);
+        values.forEach((_, i) => {
+          modifyValues[i][0] = parseBool(values[i][fieldIndex.modify]) && 
+                    (newTags.some(a => a.id === values[i][fieldIndex.id]) || 
+                    deletionRequests.some(d => d.id === values[i][fieldIndex.id]))
+                    ? false 
+                    : modifyValues[i][0];
+        });
+
+        modifyRange.setValues(modifyValues);
+
+        // Если все счета обработаны без ошибок, перезагружает список счетов
+        if (!modifyValues.some(row => parseBool(row[0]))) {  
+          doLoad(false); // не показывать toast при перезагрузке после обновления
+        }
 
         // Подсчёт реальных изменений
         SpreadsheetApp.getActive().toast(
