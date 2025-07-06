@@ -25,7 +25,7 @@
 * Скрипт [Categories](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Categories.gs) - для импорта и экспорта данных по категориям
 * Скрипт [Accounts](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Accounts.gs) - для импорта и экспорта данных по счетам
 * Скрипт [Merchants](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Merchants.gs) - для импорта и экспорта данных по местам
-* HTML-файл для обработки замены одной категории на другую, [CategoryReplacementDialog](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/CategoryReplacementDialog.html) 
+* HTML-файл [CategoryReplacementDialog](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/CategoryReplacementDialog.html) для обработки замены одной категории на другую
 
 Экспорт данных в Google Таблицы относительно безопасен, скрипт просто забирает их с сервера и раскидывает по ячейкам. Запросы же на изменение данных выполняются уже на ваш страх и риск. Защита от дурака предусмотрена, но не покрывает все случаи, тем более, что полной документации на API я не видел.
 
