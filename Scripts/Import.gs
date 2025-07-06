@@ -72,29 +72,19 @@ const Import = (function () {
     return result;
   }
 
-  // Кэш справочников
-  const DICTIONARIES = {
-    accounts: null,
-    instruments: null,
-    tags: null,
-    merchants: null
-  };
+  // Кэш обратных справочников
+  const REVERSE_DICTIONARIES = { accounts: null, instruments: null, tags: null, merchants: null, users: null };
 
-  // Загрузка справочников
-    function loadDictionaries() {
-      const dictionaries = Dictionaries.loadDictionariesFromSheet();
-      if (!dictionaries) throw new Error("Не удалось загрузить справочники");
+  // Загрузка обратных справочников
+  function loadDictionaries() {
+    const dictionaries = Dictionaries.loadDictionariesFromSheet();
+    if (!dictionaries) throw new Error("Не удалось загрузить справочники");
 
-      const reverseDicts = Dictionaries.getAllReverseDictionaries();
-
-      DICTIONARIES.accounts = new Map(Object.entries(reverseDicts.accountsRev));
-      DICTIONARIES.instruments = new Map(Object.entries(reverseDicts.instrumentsRev));
-      DICTIONARIES.tags = new Map(Object.entries(reverseDicts.tagsRev));
-      DICTIONARIES.merchants = new Map(Object.entries(reverseDicts.merchantsRev));
-      DICTIONARIES.users = new Map(Object.entries(reverseDicts.usersRev));
-
-      return dictionaries;
-    }
+    // Хранит объекты обратных справочников в формате {'Название'->'id'}
+    Object.entries(Dictionaries.getAllReverseDictionaries()).forEach(([key, value]) => {
+      REVERSE_DICTIONARIES[key.replace('Rev', '').toLowerCase()] = new Map(Object.entries(value));
+    });
+  }
 
   // Парсеры для различных типов данных
   const parsers = {
@@ -142,7 +132,7 @@ const Import = (function () {
   // Безопасное получение ID из справочников
   function getAccountIdSafe(accountName) {
     if (!accountName || accountName === "null") return null;
-    const id = DICTIONARIES.accounts.get(accountName);
+    const id = REVERSE_DICTIONARIES.accounts.get(accountName);
     if (!id) {
       throw new Error(`Не найден ID для счета "${accountName}". Проверьте наличие счета в справочнике.`);
     }
@@ -151,7 +141,7 @@ const Import = (function () {
 
   function getInstrumentIdSafe(instrumentName) {
     if (!instrumentName || instrumentName === "null") return null;
-    const id = DICTIONARIES.instruments.get(instrumentName);
+    const id = REVERSE_DICTIONARIES.instruments.get(instrumentName);
     if (!id && instrumentName) {
       throw new Error(`Не найдена валюта "${instrumentName}". Проверьте справочник валют.`);
     }
@@ -160,7 +150,7 @@ const Import = (function () {
 
   function getUserIdSafe(userName) {
     if (!userName || userName === "null") return null;
-    const id = DICTIONARIES.users.get(userName);
+    const id = REVERSE_DICTIONARIES.users.get(userName);
     if (!id && userName) {
       throw new Error(`Не найден пользователь "${userName}". Проверьте справочник пользователей.`);
     }
@@ -169,7 +159,7 @@ const Import = (function () {
 
   function getMerchantIdSafe(merchantName) {
     if (!merchantName || merchantName === "null") return null;
-    const id = DICTIONARIES.merchants.get(merchantName);
+    const id = REVERSE_DICTIONARIES.merchants.get(merchantName);
     if (!id) {
       throw new Error(`Не найден ID для места "${merchantName}". Проверьте справочник мест.`);
     }
@@ -183,9 +173,9 @@ const Import = (function () {
     if (tagMode === Settings.TAG_MODES.MULTIPLE_COLUMNS) {  
       // Режим отдельных столбцов  
       tags = [  
-        row[COLUMNS.tag],   // Основной тег  
-        row[COLUMNS.tag1],  // Дополнительный тег 1  
-        row[COLUMNS.tag2]   // Дополнительный тег 2  
+        String(row[COLUMNS.tag]),   // Основной тег  
+        String(row[COLUMNS.tag1]),  // Дополнительный тег 1  
+        String(row[COLUMNS.tag2])   // Дополнительный тег 2  
       ]  
       .filter(tag => tag && tag !== "null" && tag.trim() !== "")  
       .map(tag => tag.trim());  
@@ -202,7 +192,7 @@ const Import = (function () {
     
     // Преобразуем названия тегов в ID  
     return tags.map(tag => {  
-      const id = DICTIONARIES.tags.get(tag);  
+      const id = REVERSE_DICTIONARIES.tags.get(tag);  
       if (!id) {  
         throw new Error(`Не найден ID для категории "${tag}". Проверьте справочник категорий.`);  
       }  
@@ -528,9 +518,9 @@ const Import = (function () {
     const newMerchants = [];
 
     merchantNamesSet.forEach(name => {
-      if (!DICTIONARIES.merchants.has(name)) {
+      if (!REVERSE_DICTIONARIES.merchants.has(name)) {
         const newId = Utilities.getUuid().toLowerCase();
-        DICTIONARIES.merchants.set(name, newId);
+        REVERSE_DICTIONARIES.merchants.set(name, newId);
         newMerchants.push({ id: newId, title: name });
       }
     });
