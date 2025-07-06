@@ -50,6 +50,7 @@ function handleCategoryReplacement(oldCategoryId, newCategoryId) {
 // МЕНЮ
 // Функции для создания и управления меню Дзен Мани
 //═══════════════════════════════════════════════════════════════════════════
+
 function createMenu() {
   try {
     const ui = SpreadsheetApp.getUi();
@@ -58,37 +59,47 @@ function createMenu() {
       .addItem('Обновить Словари', 'doUpdateDictionaries')
       .addSeparator();
 
-    addSubMenu(mainMenu, 'Экспорт', Export, [
-      { name: "Полный экспорт", func: "doFullExport" },
-      { name: "Инкрементальный экспорт", func: "doIncrementalExport" },
-      { name: "Подготовить лист изменений", func: "prepareChangesSheet" },
-      { name: "Применить изменения", func: "applyChangesToDataSheet" }
-    ], [], 'Export');
+    if (typeof Export !== 'undefined') {
+      addSubMenu(mainMenu, 'Экспорт', [
+        { name: "Полный экспорт", func: "doFullExport" },
+        { name: "Инкрементальный экспорт", func: "doIncrementalExport" },
+        { name: "Подготовить лист изменений", func: "prepareChangesSheet" },
+        { name: "Применить изменения", func: "applyChangesToDataSheet" }
+      ], [], 'Export');
+    }
 
-    addSubMenu(mainMenu, 'Импорт', Import, [
-      { name: "Частичный импорт", func: "doUpdate" }
-    ], [Tracking, Validation], 'Import');
+    if (typeof Import !== 'undefined') {
+      addSubMenu(mainMenu, 'Импорт', [
+        { name: "Частичный импорт", func: "doUpdate" }
+      ], [Tracking, Validation], 'Import');
+    }
 
-    addSubMenu(mainMenu, 'Настройка категорий', Categories, [
-      { name: "Загрузить", func: "doLoad" },
-      { name: "Сохранить", func: "doSave" },
-      { name: "Частично", func: "doPartial" },
-      { name: "Заменить", func: "doReplace" }
-    ], [Categories], 'Categories');
+    if (typeof Categories !== 'undefined') {
+      addSubMenu(mainMenu, 'Настройка категорий', [
+        { name: "Загрузить", func: "doLoad" },
+        { name: "Сохранить", func: "doSave" },
+        { name: "Частично", func: "doPartial" },
+        { name: "Заменить", func: "doReplace" }
+      ], [Categories], 'Categories');
+    }
 
-    addSubMenu(mainMenu, 'Настройка счетов', Accounts, [
-      { name: "Загрузить", func: "doLoad" },
-      { name: "Сохранить", func: "doSave" },
-      { name: "Частично", func: "doPartial" },
-      { name: "Заменить", func: "doReplace" }
-    ], [], 'Accounts');
+    if (typeof Accounts !== 'undefined') {
+      addSubMenu(mainMenu, 'Настройка счетов', [
+        { name: "Загрузить", func: "doLoad" },
+        { name: "Сохранить", func: "doSave" },
+        { name: "Частично", func: "doPartial" },
+        { name: "Заменить", func: "doReplace" }
+      ], [], 'Accounts');
+    }
 
-    addSubMenu(mainMenu, 'Настройка мест', Merchants, [
-      { name: "Загрузить", func: "doLoad" },
-      { name: "Сохранить", func: "doSave" },
-      { name: "Частично", func: "doPartial" },
-      { name: "Заменить", func: "doReplace" }
-    ], [], 'Merchants');
+    if (typeof Merchants !== 'undefined') {
+      addSubMenu(mainMenu, 'Настройка мест', [
+        { name: "Загрузить", func: "doLoad" },
+        { name: "Сохранить", func: "doSave" },
+        { name: "Частично", func: "doPartial" },
+        { name: "Заменить", func: "doReplace" }
+      ], [], 'Merchants');
+    }
 
     mainMenu.addToUi();
   } catch (error) {
@@ -96,26 +107,105 @@ function createMenu() {
   }
 }
 
-function addSubMenu(mainMenu, menuName, module, items, extraModules = [], moduleName = null) {
-  if (typeof module !== 'undefined') {
-    const subMenu = SpreadsheetApp.getUi().createMenu(menuName);
-    
-    const moduleNameForPath = moduleName || menuName;
-    
-    items.forEach(item => {
-      const functionPath = `${moduleNameForPath}.${item.func}`;
-      subMenu.addItem(item.name, functionPath);
-    });
+function addSubMenu(mainMenu, menuName, items, extraModules = [], moduleName = null) {
+  const subMenu = SpreadsheetApp.getUi().createMenu(menuName);
+  const moduleNameForPath = moduleName || menuName;
 
-    extraModules.forEach(extraModule => {
-      if (typeof extraModule !== 'undefined' && typeof extraModule.addMenuItems === 'function') {
-        extraModule.addMenuItems(subMenu);
-      }
-    });
+  items.forEach(item => {
+    const functionPath = `${moduleNameForPath}.${item.func}`;
+    subMenu.addItem(item.name, functionPath);
+  });
 
-    mainMenu.addSubMenu(subMenu);
-  }
+  extraModules.forEach(extraModule => {
+    if (typeof extraModule !== 'undefined' && typeof extraModule.addMenuItems === 'function') {
+      extraModule.addMenuItems(subMenu);
+    }
+  });
+
+  mainMenu.addSubMenu(subMenu);
 }
+
+/*
+// Конфигурация подменю
+function createMenu() {
+  const ui = SpreadsheetApp.getUi();
+  const menu = ui.createMenu('Дзен Мани')
+    .addItem('Полная Синхронизация', 'doFullSync')
+    .addItem('Обновить Словари', 'doUpdateDictionaries')
+    .addSeparator();
+
+  // Конфигурация подменю с жестко заданными именами модулей
+  const menuConfig = [
+    {
+      name: 'Экспорт',
+      module: Export,
+      items: [
+        ["Полный экспорт", "Export.doFullExport"],
+        ["Инкрементальный экспорт", "Export.doIncrementalExport"],
+        ["Подготовить лист изменений", "Export.prepareChangesSheet"],
+        ["Применить изменения", "Export.applyChangesToDataSheet"]
+      ]
+    },
+    {
+      name: 'Импорт',
+      module: Import,
+      items: [["Частичный импорт", "Import.doUpdate"]],
+      extra: [Tracking, Validation]
+    },
+    {
+      name: 'Настройка категорий',
+      module: Categories,
+      items: [
+        ["Загрузить", "Categories.doLoad"],
+        ["Сохранить", "Categories.doSave"],
+        ["Частично", "Categories.doPartial"],
+        ["Заменить", "Categories.doReplace"]
+      ],
+      extra: [Categories]
+    },
+    {
+      name: 'Настройка счетов',
+      module: Accounts,
+      items: [
+        ["Загрузить", "Accounts.doLoad"],
+        ["Сохранить", "Accounts.doSave"],
+        ["Частично", "Accounts.doPartial"],
+        ["Заменить", "Accounts.doReplace"]
+      ]
+    },
+    {
+      name: 'Настройка мест',
+      module: Merchants,
+      items: [
+        ["Загрузить", "Merchants.doLoad"],
+        ["Сохранить", "Merchants.doSave"],
+        ["Частично", "Merchants.doPartial"],
+        ["Заменить", "Merchants.doReplace"]
+      ]
+    }
+  ];
+
+  // Динамическое создание меню
+  menuConfig.forEach(config => {
+    if (config.module) {
+      const subMenu = ui.createMenu(config.name);
+      
+      // Добавляем основные пункты (имена функций уже содержат имя модуля)
+      config.items.forEach(([name, funcPath]) => {
+        subMenu.addItem(name, funcPath);
+      });
+      
+      // Добавляем дополнительные пункты
+      config.extra?.forEach(module => {
+        if (module?.addMenuItems) module.addMenuItems(subMenu);
+      });
+      
+      menu.addSubMenu(subMenu);
+    }
+  });
+
+  menu.addToUi();
+}*/
 
 //═══════════════════════════════════════════════════════════════════════════
 // СИНХРОНИЗАЦИЯ
