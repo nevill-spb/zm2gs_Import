@@ -2,6 +2,8 @@ const Logs = (function () {
   const settingsSheet = sheetHelper.Get(Settings.SHEETS.SETTINGS.NAME);
   if (!settingsSheet) throw new Error(`Лист "${Settings.SHEETS.SETTINGS.NAME}" не найден`);
 
+  const isLoggingEnabled = sheetHelper.GetCellValue(Settings.SHEETS.SETTINGS.NAME, Settings.SHEETS.SETTINGS.CELLS.LOGS_ENABLED) === "ДА";
+
   const sheet = sheetHelper.Get(Settings.SHEETS.LOGS);
   if (!sheet) {
     Logger.log("Лист для логгирования не найден");
@@ -45,10 +47,6 @@ const Logs = (function () {
     };  
   })();
 
-  function isLoggingEnabled() {  
-    return sheetHelper.GetCellValue(Settings.SHEETS.SETTINGS.NAME, Settings.SHEETS.SETTINGS.CELLS.LOGS_ENABLED) === "ДА";  
-  }
-
   // Кастомный форматтер JSON с переводами строк для массивов объектов
   function customJSONStringify(obj, indent = 2) {
     const filterConfig = getFilterConfig();
@@ -81,7 +79,7 @@ const Logs = (function () {
         if (filterConfig.excludeRefs.includes(key)) return;
 
         if (key === 'transaction' && Array.isArray(responseObj[key])) {
-          filteredResponse[key] = responseObj[key].filter(tag => !tag.deleted);
+          filteredResponse[key] = responseObj[key].filter(transaction => !transaction.deleted);
           if (filterConfig.showCount.includes(key)) {
             filteredResponse[key] = `[${filteredResponse[key].length} items]`;
           } else if (filteredResponse[key].length > filterConfig.maxArrayItems) {
@@ -153,7 +151,7 @@ const Logs = (function () {
   }
   
   function logApiCall(method, requestPayload, responseContent) {
-    if (!isLoggingEnabled()) {  
+    if (!isLoggingEnabled) {  
       return; // если чекбокс выключен, не логируем  
     }
 
