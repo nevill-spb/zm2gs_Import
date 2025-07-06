@@ -63,7 +63,7 @@ const Categories = (function () {
   // ФУНКЦИИ РАБОТЫ С ДАННЫМИ
   //═══════════════════════════════════════════════════════════════════════════
   // Генерирует карту соответствия старых и новых ID категорий, считает статистику изменений
-  function generateIdMap(values, tags, mode, fieldIndex) {
+  function generateIdMap(values, fieldIndex, mode, tagsMap, existingIds) {
     const idMap = {};
     const processedIds = new Set();
     const stats = { new: 0, modified: 0, deleted: 0 };
@@ -78,7 +78,7 @@ const Categories = (function () {
 
       const shouldDelete = parseBool(row[fieldIndex.delete]);
       const shouldModify = parseBool(row[fieldIndex.modify]);
-      const existsOnServer = currentId && tags.some(t => t.id === currentId);
+      const existsOnServer = existingIds.has(currentId);
 
       // Удаление только существующих с подтверждением
       if (shouldDelete) {
@@ -112,9 +112,9 @@ const Categories = (function () {
 
     // В режиме REPLACE удаляем всё, чего нет в таблице
     if (mode.id === UPDATE_MODES.REPLACE.id) {
-      tags.forEach(tag => {
-        if (!processedIds.has(tag.id)) {
-          tagsToDelete.push(tag.id);
+      tagsMap.forEach((tag, id) => {
+        if (!processedIds.has(id)) {
+          tagsToDelete.push(id);
           stats.deleted++;
         }
       });
@@ -122,7 +122,7 @@ const Categories = (function () {
 
     // Дети родительских категорий также будут удалены
     tagsToDelete.forEach(parentId => {
-      tags.filter(t => t.parent === parentId)
+      Array.from(tagsMap.values()).filter(t => t.parent === parentId)
         .filter(child => !tagsToDelete.includes(child.id))
         .forEach(child => {
           const childRow = values.find(r => r[fieldIndex.id] === child.id);
@@ -214,12 +214,12 @@ const Categories = (function () {
         return null;
       }
 
-      let totalAffectedCount = 0;
+      let affectedCount = 0;
       const affectedTransactions = [];
 
       json.transaction.forEach(t => {
         if (!t.deleted && t.tag && t.tag.some(tagId => tagIds.includes(tagId))) {
-          totalAffectedCount++;
+          affectedCount++;
           if (affectedTransactions.length < 20) {
             affectedTransactions.push(t);
           }
@@ -227,7 +227,7 @@ const Categories = (function () {
       });
 
       return affectedTransactions.length > 0 ? {
-        count: totalAffectedCount,
+        count: affectedCount,
         sample: affectedTransactions.map(t => {
           return `${t.date}${
             t.income 
@@ -385,7 +385,7 @@ const Categories = (function () {
   // ФУНКЦИИ СОЗДАНИЯ И ОБНОВЛЕНИЯ КАТЕГОРИЙ
   //═══════════════════════════════════════════════════════════════════════════
   // Создаёт объект категории из строки листа
-  function createTagFromRow(row, i, ts, tags, mode, idMap) {
+  function createTagFromRow(row, i, ts, existingIds, mode, idMap, tagsMap) {
     const currentId = row[fieldIndex.id];
     const oldParentId = row[fieldIndex.parent] || null;
     const titleRaw = row[fieldIndex.title];
@@ -396,7 +396,7 @@ const Categories = (function () {
     const user = Dictionaries.getUserId(row[fieldIndex.user]) || Settings.DefaultUserId;
     const shouldModify = parseBool(row[fieldIndex.modify]);
     const shouldDelete = parseBool(row[fieldIndex.delete]);
-    const existsOnServer = currentId && tags.some(t => t.id === currentId);    
+    const existsOnServer = existingIds.has(currentId);   
     
     if (mode === UPDATE_MODES.PARTIAL && !shouldModify) return null;
 
@@ -419,7 +419,7 @@ const Categories = (function () {
 
     const newParentId = (oldParentId && idMap[oldParentId]) ? idMap[oldParentId] : null;
 
-    let tag = tags.find(t => t.id === currentId) || { id: currentId, };
+    let tag = tagsMap.get(currentId) || { id: currentId };
 
     Object.assign(tag, {
       parent: newParentId,
@@ -460,9 +460,10 @@ const Categories = (function () {
 
       const { idMap, processedIds, new: newCount, modified: modifiedCount, deleted: deletedCount, tagsToDelete, deletedChildTagsCount } = generateIdMap(
         values,
-        tags,
+        fieldIndex,
         mode,
-        fieldIndex
+        tagsMap,
+        existingIds
       );
 
       const confirmLines = [];
@@ -477,7 +478,7 @@ const Categories = (function () {
           if (transactionsInfo) {
             confirmLines.push(
               `\nВНИМАНИЕ: Найдено ${transactionsInfo.count} транзакций с удаляемыми категориями.`,
-              `Примеры: \n${transactionsInfo.sample.slice(0, 3).join(';\n')}${
+              `\nПримеры: \n${transactionsInfo.sample.slice(0, 3).join(';\n')}${
                 transactionsInfo.sample.length > 3 
                   ? `\n...и ещё ${transactionsInfo.count - 3}` 
                   : ''
@@ -520,7 +521,7 @@ const Categories = (function () {
 
       for (let i = 0; i < values.length; i++) {
         const row = values[i];
-        const result = createTagFromRow(row, i, ts, tags, mode, idMap);
+        const result = createTagFromRow(row, i, ts, existingIds, mode, idMap, tagsMap);
         if (!result) continue;
 
         if (result.deletion) {
@@ -700,12 +701,18 @@ const Categories = (function () {
       return [];
     }
     
-    return tags.map(tag => ({
-      id: tag.id,
-      title: tag.title,
-      parentTitle: tags.find(t => t.id === tag.parent)?.title || null,
-      fullTitle: tag.parent ? `${tags.find(t => t.id === tag.parent).title} / ${tag.title}` : tag.title
-    })).sort((a, b) => a.fullTitle.localeCompare(b.fullTitle));
+    const tagsMap = new Map(tags.map(tag => [tag.id, tag]));
+    
+    return tags.map(tag => {
+      const parentTitle = tag.parent ? tagsMap.get(tag.parent)?.title || null : null;
+      
+      return {
+        id: tag.id,
+        title: tag.title,
+        parentTitle: parentTitle,
+        fullTitle: parentTitle ? `${parentTitle} / ${tag.title}` : tag.title
+      };
+    }).sort((a, b) => a.fullTitle.localeCompare(b.fullTitle));
   }
 
   function handleCategoryReplacement(oldId, newId) {
