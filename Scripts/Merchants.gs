@@ -12,17 +12,33 @@ const Merchants = (function () {
   //═══════════════════════════════════════════════════════════════════════════
   // ИНИЦИАЛИЗАЦИЯ
   //═══════════════════════════════════════════════════════════════════════════
-  // Получение листа мест из настроек
-  const sheet = sheetHelper.GetSheetFromSettings('MERCHANTS_SHEET');
-  if (!sheet) {
-    Logger.log("Лист с местами не найден");
-    SpreadsheetApp.getActive().toast('Лист с местами не найден', 'Ошибка');
-    return;
-  }
 
-  // Определяет поля по id для удобства доступа
-  const fieldIndex = {};
-  Settings.MERCHANT_FIELDS.forEach((f, i) => fieldIndex[f.id] = i);
+  let initialized = false;
+  let sheet = null;
+  let fieldIndex = {};
+  
+  function initialize() {
+    if (initialized) return true;
+    
+    try {
+      // Получение листа мест из настроек
+      sheet = sheetHelper.GetSheetFromSettings('MERCHANTS_SHEET');
+      if (!sheet) {
+        Logger.log("Лист со местами не найден");
+        SpreadsheetApp.getActive().toast('Лист со местами не найден', 'Ошибка');
+        return false;
+      }
+
+      // Определяет поля по id для удобства доступа
+      Settings.MERCHANT_FIELDS.forEach((f, i) => fieldIndex[f.id] = i);
+      
+      initialized = true;
+      return true;
+    } catch (e) {
+      Logger.log("Ошибка инициализации Merchants: " + e.toString());
+      return false;
+    }
+  }
 
   //═══════════════════════════════════════════════════════════════════════════
   // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -110,6 +126,8 @@ const Merchants = (function () {
 
   // Подготавливает данные для записи в лист, сортирует места по названию и id
   function prepareData(json, showToast = true) {
+    if (!initialize()) return;
+
     if (!('merchant' in json)) {
       if (showToast) SpreadsheetApp.getActive().toast('Нет данных о местах', 'Предупреждение');  
       return;
@@ -550,6 +568,8 @@ const Merchants = (function () {
 
   // Загружает места с сервера и подготавливает данные для листа
   function doLoad(showToast = true) {
+    if (!initialize()) return;
+
     Dictionaries.loadDictionariesFromSheet();
     
     const json = zmData.RequestForceFetch(['merchant']);
@@ -561,6 +581,8 @@ const Merchants = (function () {
 
   // Основная функция обновления мест
   function doUpdate(mode) {
+    if (!initialize()) return;
+
     const lastRow = sheet.getLastRow();
     if (lastRow < 2) {
       Logger.log('Нет данных для обновления мест');
