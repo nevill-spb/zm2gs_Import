@@ -14,9 +14,9 @@
 Обновите файл таблиц. Если появилось меню Zen Money, поздравляю, у вас получилось. Запустите любой пункт меню, чтобы появился запрос на предоставление скриптам необходимых прав, и подтвердите его. Запустите Zen Money -> Full Sync, или же Zen Money -> Update Dictionaries, чтобы обновить словари. Выберите пользователя и валюту по умолчанию на листе настроек. Выберите, как производить обработку нескольких категорий - перечислять их в одной строке с разделителями, или выделять под каждую отдельный столбец. Вы готовы приступить к работе! 
 
 Для работы используются:
-* Скрипт [Settings](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Settings.gs) с настройками остальных скриптов - обязателен
-* Скрипт [Main](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Main.gs) с описанием основных функций по синхронизации данных - обязателен
-* Скрипт [Dictionaries](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Dictionaries.gs) для операций со словарями - обязателен
+* Скрипт [Settings](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Settings.gs) с настройками остальных скриптов - **обязателен**
+* Скрипт [Main](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Main.gs) с описанием основных функций по синхронизации данных - **обязателен**
+* Скрипт [Dictionaries](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Dictionaries.gs) для операций со словарями - **обязателен**
 * Скрипт [Logs](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Logs.gs) для логгирования - необязателен
 * Скрипт [Export](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Export.gs) - для экспорта транзакций с сервера в Google Таблицы
 * Скрипт [Import](https://github.com/nevill-spb/zm2gs_Import/blob/main/Scripts/Import.gs) - для импорта транзакций на сервер из Google Таблиц
