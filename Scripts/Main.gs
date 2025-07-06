@@ -30,6 +30,22 @@ function onOpen(e) {
   }
 }
 
+function handleCategoryReplacement(oldCategoryId, newCategoryId) {
+  try {
+    if (typeof Categories === 'undefined' || 
+        typeof Categories.handleCategoryReplacement !== 'function') {
+      throw new Error('Модуль замены категорий не инициализирован');
+    }
+    return Categories.handleCategoryReplacement(oldCategoryId, newCategoryId);
+  } catch (e) {
+    console.error('Ошибка в handleCategoryReplacement:', e);
+    return {
+      error: true,
+      message: e.message
+    };
+  }
+}
+
 //═══════════════════════════════════════════════════════════════════════════
 // МЕНЮ
 // Функции для создания и управления меню Дзен Мани
@@ -58,7 +74,7 @@ function createMenu() {
       { name: "Сохранить", func: "doSave" },
       { name: "Частично", func: "doPartial" },
       { name: "Заменить", func: "doReplace" }
-    ], [], 'Categories');
+    ], [Categories], 'Categories');
 
     addSubMenu(mainMenu, 'Настройка счетов', Accounts, [
       { name: "Загрузить", func: "doLoad" },
@@ -66,6 +82,13 @@ function createMenu() {
       { name: "Частично", func: "doPartial" },
       { name: "Заменить", func: "doReplace" }
     ], [], 'Accounts');
+
+    addSubMenu(mainMenu, 'Настройка мест', Merchants, [
+      { name: "Загрузить", func: "doLoad" },
+      { name: "Сохранить", func: "doSave" },
+      { name: "Частично", func: "doPartial" },
+      { name: "Заменить", func: "doReplace" }
+    ], [], 'Merchants');
 
     mainMenu.addToUi();
   } catch (error) {
