@@ -52,6 +52,7 @@ const Categories = (function () {
     const processedIds = new Set();
     const stats = { new: 0, modified: 0, deleted: 0 };
     const tagsToDelete = [];
+    const childTagsToDelete = []; // Отдельный массив для дочерних категорий
 
     for (let i = 0; i < values.length; i++) {
       const row = values[i];
@@ -83,11 +84,13 @@ const Categories = (function () {
               idMap[currentId] = Utilities.getUuid().toLowerCase();
               stats.new++;
           }
-      } else if (shouldModify) {
-          // Существующие категорий с флагом modify
+      } else {
+          // Составляем полную карту существующих категорий
           idMap[currentId] = currentId;
-          processedIds.add(currentId);
-          stats.modified++;
+          // Подсчитываем категории с флагом modify
+          if (shouldModify) {
+            processedIds.add(currentId);
+            stats.modified++;}
       }
     }
 
@@ -101,7 +104,29 @@ const Categories = (function () {
       });
     }
 
-    return { ...stats, idMap, processedIds, tagsToDelete };
+    // Дети родительских категорий также будут удалены
+    tagsToDelete.forEach(parentId => {
+      tags.filter(t => t.parent === parentId)
+        .filter(child => !tagsToDelete.includes(child.id))
+        .forEach(child => {
+          const childRow = values.find(r => r[fieldIndex.id] === child.id);
+          if (!childRow) return;
+          
+          const shouldModify = parseBool(childRow[fieldIndex.modify]);
+          const sameParent = child.parent === childRow[fieldIndex.parent];
+          const parentMarkedForDelete = tagsToDelete.includes(child.parent);
+          
+          if ((shouldModify && sameParent && parentMarkedForDelete) || !shouldModify) {
+            childTagsToDelete.push(child.id);
+            stats.deleted++;
+            if (shouldModify && sameParent) stats.modified--;
+          }
+        });
+    });
+
+    tagsToDelete.push(...childTagsToDelete);
+
+    return { ...stats, idMap, processedIds, tagsToDelete, deletedChildTagsCount: childTagsToDelete.length };
   }
 
   // Формирует строку для записи в лист из объекта категории, учитывая типы полей
@@ -171,12 +196,20 @@ const Categories = (function () {
         return null;
       }
 
-      const affectedTransactions = json.transaction.filter(t => 
-        !t.deleted && t.tag && t.tag.some(tagId => tagIds.includes(tagId))
-      ).slice(0, 20); // Ограничиваем выборку для производительности
+      let totalAffectedCount = 0;
+      const affectedTransactions = [];
+
+      json.transaction.forEach(t => {
+        if (!t.deleted && t.tag && t.tag.some(tagId => tagIds.includes(tagId))) {
+          totalAffectedCount++;
+          if (affectedTransactions.length < 20) {
+            affectedTransactions.push(t);
+          }
+        }
+      });
 
       return affectedTransactions.length > 0 ? {
-        count: affectedTransactions.length,
+        count: totalAffectedCount,
         sample: affectedTransactions.map(t => {
           return `${t.date}${
             t.income 
@@ -366,6 +399,13 @@ const Categories = (function () {
       return null;
     }
 
+    // Добавляем логирование перед определением newParentId
+    Logger.log(`[DEBUG] Parent ID mapping - Row ${i+1}: ` + 
+               `Title: "${title}", ` +
+               `Old Parent ID: "${oldParentId}", ` +
+               `Exists in idMap: ${oldParentId in idMap}, ` +
+               `idMap value: ${idMap[oldParentId]}`);
+
     const newParentId = (oldParentId && idMap[oldParentId]) ? idMap[oldParentId] : null;
 
     let tag = tags.find(t => t.id === currentId) || { id: currentId, };
@@ -407,7 +447,7 @@ const Categories = (function () {
       const existingIds = new Set(tags.map(t => t.id));
       const tagsMap = new Map(tags.map(t => [t.id, t]));
 
-      const { idMap, processedIds, new: newCount, modified: modifiedCount, deleted: deletedCount, tagsToDelete } = generateIdMap(
+      const { idMap, processedIds, new: newCount, modified: modifiedCount, deleted: deletedCount, tagsToDelete, deletedChildTagsCount } = generateIdMap(
         values,
         tags,
         mode,
@@ -497,10 +537,17 @@ const Categories = (function () {
 
       // Уведомление об удалении
       if (deletedTitles.length > 0) {
-        const deletionMsg = deletedTitles.length === 1
+        let deletionMsg = deletedTitles.length === 1 
           ? `Будет удалена категория: ${deletedTitles[0]}`
-          : `Будут удалены категории:\n${deletedTitles.slice(0, 5).join(',\n')}${deletedTitles.length > 5 ? `\n...и еще ${deletedTitles.length - 5}` : ''}`;
-        Logger.log(`Cписок удаляемых категорий (${deletedTitles.length}):\n${deletedTitles.join(',\n')}`);          
+          : `Будут удалены категории:\n${deletedTitles.slice(0, 5).join(',\n')}${
+              deletedTitles.length > 5 ? `\n...и еще ${deletedTitles.length - 5}` : ''
+            }`;
+        
+        if (deletedChildTagsCount > 0) {
+          deletionMsg += `, а также ${deletedChildTagsCount} дочерних`;
+        }
+        
+        Logger.log(`Удаление ${deletedTitles.length} категорий:\n${deletedTitles.join('\n')}${deletedChildTagsCount > 0 ? ` + ${deletedChildTagsCount} дочерних` : ''}`);
         SpreadsheetApp.getActive().toast(deletionMsg, 'Удаление категорий');
         Utilities.sleep(2000);
       }
@@ -551,7 +598,7 @@ const Categories = (function () {
         SpreadsheetApp.getActive().toast(
         `${mode.id === UPDATE_MODES.REPLACE.id ? 'Замена' : 'Обновление'} завершено:\n` +
         `Новых/изменённых: ${modifyRequests.length}\n` +
-        `Удалено: ${deleteRequests.length}` +
+        `Удалено: ${deleteRequests.length + deletedChildTagsCount}` +
         (errors.length > 0 ? `\nОшибок: ${errors.length}` : ''),
         'Успех'
       );
@@ -607,10 +654,95 @@ const Categories = (function () {
   // Регистрация обработчика полной синхронизации
   fullSyncHandlers.push(prepareData);
 
+  //═══════════════════════════════════════════════════════════════════════════
+  // ЗАМЕНА КАТЕГОРИЙ В ОПЕРАЦИЯХ
+  //═══════════════════════════════════════════════════════════════════════════
+  function showCategoryReplacementDialog() {
+    const categories = getSortedCategories();
+    if (!categories.length) {
+      SpreadsheetApp.getUi().alert('Ошибка', 'Не удалось загрузить категории', SpreadsheetApp.getUi().ButtonSet.OK);
+      return;
+    }
+    
+    try {
+      const html = HtmlService.createTemplateFromFile('CategoryReplacementDialog');
+      html.categories = categories;
+      SpreadsheetApp.getUi().showModalDialog(html.evaluate()
+        .setWidth(500)
+        .setHeight(350), 'Заменить категорию в операциях');
+    } catch (error) {
+      Logger.log('Не удалось открыть диалоговое окно: ' + error.message);
+      SpreadsheetApp.getUi().alert('Ошибка', 'Не удалось открыть диалоговое окно', SpreadsheetApp.getUi().ButtonSet.OK);
+    }
+  }
+
+  function getSortedCategories() {
+    const { tag: tags } = zmData.RequestForceFetch(['tag']) || {};
+    if (!tags) {
+      Logger.log('Не удалось получить список категорий');
+      return [];
+    }
+    
+    return tags.map(tag => ({
+      id: tag.id,
+      title: tag.title,
+      parentTitle: tags.find(t => t.id === tag.parent)?.title || null,
+      fullTitle: tag.parent ? `${tags.find(t => t.id === tag.parent).title} / ${tag.title}` : tag.title
+    })).sort((a, b) => a.fullTitle.localeCompare(b.fullTitle));
+  }
+
+  function handleCategoryReplacement(oldId, newId) {
+    try {
+      if (!oldId || !newId || oldId === newId) {
+        throw new Error(oldId === newId ? 'Нельзя заменять одинаковые категории' : 'Не выбраны категории');
+      }
+
+      const { transaction: transactions } = zmData.RequestForceFetch(['transaction']) || {};
+      if (!transactions) throw new Error('Не удалось загрузить транзакции');
+
+      const toUpdate = transactions
+        .filter(t => !t.deleted && t.tag?.includes(oldId))
+        .map(t => ({ ...t, tag: t.tag.map(id => id === oldId ? newId : id), changed: Math.floor(Date.now()/1000) }));
+
+      if (!toUpdate.length) {
+        Logger.log('Нет операций с выбранной категорией');
+        return { success: true, count: 0, message: 'Нет операций с выбранной категорией' };
+      }
+
+      Logger.log(`Начало замены категории ${oldId} → ${newId} (${toUpdate.length} операций)`);
+      
+      const result = zmData.Request({
+        currentClientTimestamp: Math.floor(Date.now()/1000),
+        serverTimestamp: Math.floor(Date.now()/1000),
+        transaction: toUpdate
+      });
+
+      if (!result.serverTimestamp) throw new Error('Сервер не подтвердил изменения');
+      
+      Logger.log(`Успешно заменено категорий: ${toUpdate.length}`);
+      return { success: true, count: toUpdate.length, message: `Заменено в ${toUpdate.length} операциях` };
+    } catch (error) {
+      Logger.log('Ошибка замены категорий: ' + error.message);
+      return { error: true, message: error.message };
+    }
+  }
+
+  function addMenuItems(menu) {
+    try {
+      HtmlService.createTemplateFromFile('CategoryReplacementDialog');
+      menu.addSeparator().addItem('Заменить в операциях', 'Categories.showCategoryReplacementDialog');
+    } catch(e) {
+      Logger.log('HTML-диалог замены недоступен, пункт меню не добавлен: ' + e.message);
+    }
+  }
+
   return {
     doLoad,
     doSave: () => doUpdate(UPDATE_MODES.SAVE),
     doPartial: () => doUpdate(UPDATE_MODES.PARTIAL),
-    doReplace: () => doUpdate(UPDATE_MODES.REPLACE)
+    doReplace: () => doUpdate(UPDATE_MODES.REPLACE),
+    showCategoryReplacementDialog,
+    handleCategoryReplacement,
+    addMenuItems
   };
 })();
