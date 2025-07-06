@@ -15,17 +15,33 @@ const Accounts = (function () {
   //═══════════════════════════════════════════════════════════════════════════
   // ИНИЦИАЛИЗАЦИЯ
   //═══════════════════════════════════════════════════════════════════════════
-  // Получение листа категорий из настроек
-  const sheet = sheetHelper.GetSheetFromSettings('ACCOUNTS_SHEET');
-  if (!sheet) {
-    Logger.log("Лист с аккаунтами не найден");
-    SpreadsheetApp.getActive().toast('Лист с аккаунтами не найден', 'Ошибка');
-    return;
-  }
+  
+  let initialized = false;
+  let sheet = null;
+  let fieldIndex = {};
+  
+  function initialize() {
+    if (initialized) return true;
+    
+    try {
+      // Получение листа категорий из настроек
+      sheet = sheetHelper.GetSheetFromSettings('ACCOUNTS_SHEET');
+      if (!sheet) {
+        Logger.log("Лист со счетами не найден");
+        SpreadsheetApp.getActive().toast('Лист со счетами не найден', 'Ошибка');
+        return false;
+      }
 
-  // Определяет поля по id для удобства доступа
-  const fieldIndex = {};
-  Settings.ACCOUNT_FIELDS.forEach((f, i) => fieldIndex[f.id] = i);
+      // Определяет поля по id для удобства доступа
+      Settings.ACCOUNT_FIELDS.forEach((f, i) => fieldIndex[f.id] = i);
+      
+      initialized = true;
+      return true;
+    } catch (e) {
+      Logger.log("Ошибка инициализации Categories: " + e.toString());
+      return false;
+    }
+  }
 
   //═══════════════════════════════════════════════════════════════════════════
   // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -56,6 +72,7 @@ const Accounts = (function () {
     const idMap = {};
     const processedIds = new Set();
     const stats = { new: 0, modified: 0, deleted: 0 };
+    const accountsToDelete = [];
 
     for (let i = 0; i < values.length; i++) {
       const row = values[i];
@@ -80,6 +97,7 @@ const Accounts = (function () {
       if (shouldDelete) {
         if (shouldModify && existsOnServer) {
           processedIds.add(currentId);
+          accountsToDelete.push(currentId);
           stats.deleted++;
         }
         continue; // Пропускаем все остальные случаи удаления
@@ -108,12 +126,13 @@ const Accounts = (function () {
       for (const [id, account] of accountsMap) {
         if (!processedIds.has(id) && 
             !(account.title === DEBT_ACCOUNT.title && account.type === DEBT_ACCOUNT.type)) {
+          accountsToDelete.push(id);
           stats.deleted++;
         }
       }
     }
 
-    return { ...stats, idMap, processedIds };
+    return { ...stats, idMap, processedIds, accountsToDelete };
   }
 
   // Формирует строку для записи в лист из объекта счета
@@ -149,6 +168,8 @@ const Accounts = (function () {
 
   // Подготавливает данные для записи в лист, сортирует счета по названию и id
   function prepareData(json, showToast = true) {
+    if (!initialize()) return;
+
     if (!('account' in json)) {
       if (showToast) SpreadsheetApp.getActive().toast('Нет данных об счетах', 'Предупреждение');  
       return;
@@ -162,6 +183,65 @@ const Accounts = (function () {
     const data = sortedAccounts.map(acc => buildRow(acc));
     writeDataToSheet(data);
     if (showToast) SpreadsheetApp.getActive().toast(`Загружено ${data.length} счетов`, 'Информация');
+  }
+
+  // Проверяет транзакции, имеющие связи со счетами
+  function checkTransactionsWithAccounts(accountIds, debtAccountId) {
+      try {
+        const json = zmData.RequestForceFetch(['transaction']);
+        if (!json.transaction || !Array.isArray(json.transaction)) {
+          Logger.log("Нет данных о транзакциях");
+          return null;
+        }
+
+        let deletableCount = 0;
+        let affectedCount = 0;
+        const affectedTransactions = [];
+
+        json.transaction.forEach(t => {
+          if (t.deleted) return;
+          
+          const outIn = accountIds.includes(t.outcomeAccount);
+          const incIn = accountIds.includes(t.incomeAccount);
+          const outDebt = t.outcomeAccount === debtAccountId;
+          const incDebt = t.incomeAccount === debtAccountId;
+
+          // Удаляемые транзакции
+          if ((outIn && incIn) || (outIn && incDebt) || (incIn && outDebt)) {
+            deletableCount++;
+            if (affectedTransactions.length < 20) {
+              affectedTransactions.push(t);
+            }
+          } 
+          // Затрагиваемые транзакции
+          else if (outIn || incIn) {
+            affectedCount++;
+            if (affectedTransactions.length < 20) {
+              affectedTransactions.push(t);
+            }
+          }
+        });
+
+        return {
+          delcount: deletableCount,
+          affcount: affectedCount,
+          sample: affectedTransactions.map(t => {
+            return `${t.date}${
+              t.income 
+                ? ` | ${Dictionaries.getAccountTitle(t.incomeAccount)}: +${t.income} ${Dictionaries.getInstrumentShortTitle(t.incomeInstrument)}` 
+                : t.outcome 
+                  ? ` | ${Dictionaries.getAccountTitle(t.outcomeAccount)}: -${t.outcome} ${Dictionaries.getInstrumentShortTitle(t.outcomeInstrument)}` : ''
+            }${
+              t.merchant 
+                ? ` | ${Dictionaries.getMerchantTitle(t.merchant)}` 
+                : t.payee ? ` | ${t.payee}` : ''
+            }`;
+          })
+        };
+      } catch (e) {
+        Logger.log("Ошибка при проверке транзакций: " + e.toString());
+        return null;
+      }
   }
 
   //═══════════════════════════════════════════════════════════════════════════
@@ -353,7 +433,7 @@ const Accounts = (function () {
   }
 
   // Валидирует счет
-  function validateAccount(account, existingAccounts = [], deletionRequests = []) {  
+  function validateAccount(account, existingAccounts = [], deleteRequests = []) {  
     // Проверка обязательных полей  
     if (!account.title || !account.type || !account.instrument) {  
       throw new Error('Не заполнены обязательные поля (название, тип, валюта)');  
@@ -363,7 +443,7 @@ const Accounts = (function () {
     const isDuplicate = existingAccounts.some(a =>  
       a.title === account.title &&  
       a.id !== account.id &&  
-      !deletionRequests.some(del => del.id === a.id) // Исключаем счета, помеченные к удалению  
+      !deleteRequests.some(del => del.id === a.id) // Исключаем счета, помеченные к удалению  
     );  
     if (isDuplicate) {  
       throw new Error(`счет с названием "${account.title}" уже существует`);  
@@ -415,7 +495,7 @@ const Accounts = (function () {
           account.type === DEBT_ACCOUNT.type
         );     
 
-      const { idMap, processedIds, new: newCount, modified: modifiedCount, deleted: deletedCount } = generateIdMap(
+      const { idMap, processedIds, new: newCount, modified: modifiedCount, deleted: deletedCount, accountsToDelete } = generateIdMap(
         values,
         fieldIndex,
         mode,
@@ -427,7 +507,23 @@ const Accounts = (function () {
       const confirmLines = [];
       if (newCount > 0) confirmLines.push(`Будет создано новых счетов: ${newCount}`);
       if (modifiedCount > 0) confirmLines.push(`Будет изменено счетов: ${modifiedCount}`);
-      if (deletedCount > 0) confirmLines.push(`Будет удалено счетов: ${deletedCount}`);
+      if (deletedCount > 0) {
+        confirmLines.push(`Будет удалено счетов: ${deletedCount}`);
+        
+        // Проверяем транзакции с удаляемыми счетами
+        if (accountsToDelete.length > 0) {
+          const transactionsInfo = checkTransactionsWithAccounts(accountsToDelete, debtAccount.id);
+          if (transactionsInfo?.delcount + transactionsInfo?.affcount > 0) {
+            const { delcount, affcount, sample } = transactionsInfo;
+            confirmLines.push(
+              `\nВНИМАНИЕ: Найдено ${delcount + affcount} транзакций с удаляемыми счетами.`,
+              `Примеры: \n${sample.slice(0, 3).join(';\n')}${sample.length > 3 ? `\n...и ещё ${delcount + affcount - 3}` : ''}\n`,
+              ...(delcount > 0 ? [`${delcount} транзакций будут безвозвратно удалены.`] : []),
+              ...(affcount > 0 ? [`${affcount} транзакций являются переводами и будут изменены.`] : [])
+            );
+          }
+        }
+      }
 
       let confirmMessage = confirmLines.length > 0 ? confirmLines.join('\n') : 'Счетов для изменения не выбрано';
 
@@ -466,7 +562,7 @@ const Accounts = (function () {
       }
 
       // Первый проход: собираем запросы на удаление
-      const deletionRequests = [];
+      const deleteRequests = [];
       const deletedTitles = [];
 
       for (let i = 0; i < values.length; i++) {
@@ -474,7 +570,7 @@ const Accounts = (function () {
         const result = createAccountFromRow(row, i, ts, existingIds, mode, accountsMap);
         if (!result || !result.deletion) continue;
 
-        deletionRequests.push(result.deletion);
+        deleteRequests.push(result.deletion);
         deletedTitles.push(row[fieldIndex.title]);
       }
 
@@ -483,7 +579,7 @@ const Accounts = (function () {
         for (const [id, account] of accountsMap) {
           if (!processedIds.has(id) && 
               !(account.title === DEBT_ACCOUNT.title && account.type === DEBT_ACCOUNT.type)) {
-            deletionRequests.push({
+            deleteRequests.push({
               id: id,
               object: 'account',
               stamp: ts,
@@ -495,7 +591,7 @@ const Accounts = (function () {
       }
 
       // Второй проход: создание новых счетов с учетом удалений
-      const newAccounts = [];
+      const modifyRequests = [];
 
       for (let i = 0; i < values.length; i++) {
         const row = values[i];
@@ -503,8 +599,8 @@ const Accounts = (function () {
         if (!result || result.deletion) continue;
 
         try {
-          validateAccount(result.account, accounts, deletionRequests);
-          newAccounts.push(result.account);
+          validateAccount(result.account, accounts, deleteRequests);
+          modifyRequests.push(result.account);
         } catch (error) {
           errors.push(`Строка ${i+2}: ${error.message}`);
         }
@@ -515,18 +611,19 @@ const Accounts = (function () {
         const deletionMsg = deletedTitles.length === 1
           ? `Будет удален счет: ${deletedTitles[0]}`
           : `Будут удалены счета:\n${deletedTitles.slice(0, 5).join(',\n')}${deletedTitles.length > 5 ? `\n...и еще ${deletedTitles.length - 5}` : ''}`;
+        Logger.log(`Cписок удаляемых счетов (${deletedTitles.length}):\n${deletedTitles.join(',\n')}`);          
         SpreadsheetApp.getActive().toast(deletionMsg, 'Удаление счетов');
         Utilities.sleep(2000);
       }
 
       // Отправка изменений
-      if (newAccounts.length > 0 || deletionRequests.length > 0) {
+      if (modifyRequests.length > 0 || deleteRequests.length > 0) {
         const data = {
           currentClientTimestamp: ts,
           serverTimestamp: ts
         };
-        if (newAccounts.length > 0) data.account = newAccounts;
-        if (deletionRequests.length > 0) data.deletion = deletionRequests;
+        if (modifyRequests.length > 0) data.account = modifyRequests;
+        if (deleteRequests.length > 0) data.deletion = deleteRequests;
 
         SpreadsheetApp.getActive().toast('Отправляем изменения на сервер...', 'Обновление');
         const result = zmData.Request(data);
@@ -548,8 +645,8 @@ const Accounts = (function () {
 
         values.forEach((_, i) => {
           modifyValues[i][0] = parseBool(values[i][fieldIndex.modify]) && 
-                    (newAccounts.some(a => a.id === values[i][fieldIndex.id]) || 
-                    deletionRequests.some(d => d.id === values[i][fieldIndex.id]))
+                    (modifyRequests.some(a => a.id === values[i][fieldIndex.id]) || 
+                    deleteRequests.some(d => d.id === values[i][fieldIndex.id]))
                     ? false 
                     : modifyValues[i][0];
         });
@@ -562,9 +659,9 @@ const Accounts = (function () {
         }
 
         // Подсчёт реальных изменений без учёта счёта "Долги"
-        const actualChanges = newAccounts.filter(a => 
+        const actualChanges = modifyRequests.filter(a => 
           !(a.title === DEBT_ACCOUNT.title && a.type === DEBT_ACCOUNT.type)).length;
-        const actualDeletions = deletionRequests.filter(d => {
+        const actualDeletions = deleteRequests.filter(d => {
           const acc = accountsMap.get(d.id);
           return !(acc && acc.title === DEBT_ACCOUNT.title && acc.type === DEBT_ACCOUNT.type);
         }).length;
@@ -603,6 +700,8 @@ const Accounts = (function () {
 
   // Загружает счета с сервера и подготавливает данные для листа
   function doLoad(showToast = true) {
+    if (!initialize()) return;
+
     Dictionaries.loadDictionariesFromSheet();
     
     const json = zmData.RequestForceFetch(['account']);
@@ -614,6 +713,8 @@ const Accounts = (function () {
 
   // Основная функция обновления счетов
   function doUpdate(mode) {
+    if (!initialize()) return;
+
     const lastRow = sheet.getLastRow();
     if (lastRow < 2) {
       Logger.log('Нет данных для обновления счетов');
