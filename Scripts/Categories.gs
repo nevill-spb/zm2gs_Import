@@ -12,17 +12,33 @@ const Categories = (function () {
   //═══════════════════════════════════════════════════════════════════════════
   // ИНИЦИАЛИЗАЦИЯ
   //═══════════════════════════════════════════════════════════════════════════
-  // Получение листа категорий из настроек
-  const sheet = sheetHelper.GetSheetFromSettings('TAGS_SHEET');
-  if (!sheet) {
-    Logger.log("Лист с категориями не найден");
-    SpreadsheetApp.getActive().toast('Лист с категориями не найден', 'Ошибка');
-    return;
-  }
 
-  // Определяет поля по id для удобства доступа
-  const fieldIndex = {};
-  Settings.CATEGORY_FIELDS.forEach((f, i) => fieldIndex[f.id] = i);
+  let initialized = false;
+  let sheet = null;
+  let fieldIndex = {};
+
+  function initialize() {
+    if (initialized) return true;
+    
+    try {
+      // Получение листа категорий из настроек
+      sheet = sheetHelper.GetSheetFromSettings('TAGS_SHEET');
+      if (!sheet) {
+        Logger.log("Лист с категориями не найден");
+        SpreadsheetApp.getActive().toast('Лист с категориями не найден', 'Ошибка');
+        return false;
+      }
+
+      // Определяет поля по id для удобства доступа
+      Settings.CATEGORY_FIELDS.forEach((f, i) => fieldIndex[f.id] = i);
+      
+      initialized = true;
+      return true;
+    } catch (e) {
+      Logger.log("Ошибка инициализации Categories: " + e.toString());
+      return false;
+    }
+  }
 
   //═══════════════════════════════════════════════════════════════════════════
   // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -156,6 +172,8 @@ const Categories = (function () {
 
   // Подготавливает данные для записи в лист, группирует категории по родителям и детям
   function prepareData(json, showToast = true) {
+    if (!initialize()) return;
+
     if (!('tag' in json)) {
       if (showToast) SpreadsheetApp.getActive().toast('Нет данных о категориях', 'Предупреждение');
       return;
@@ -399,13 +417,6 @@ const Categories = (function () {
       return null;
     }
 
-    // Добавляем логирование перед определением newParentId
-    Logger.log(`[DEBUG] Parent ID mapping - Row ${i+1}: ` + 
-               `Title: "${title}", ` +
-               `Old Parent ID: "${oldParentId}", ` +
-               `Exists in idMap: ${oldParentId in idMap}, ` +
-               `idMap value: ${idMap[oldParentId]}`);
-
     const newParentId = (oldParentId && idMap[oldParentId]) ? idMap[oldParentId] : null;
 
     let tag = tags.find(t => t.id === currentId) || { id: currentId, };
@@ -617,6 +628,8 @@ const Categories = (function () {
 
   // Загружает категории с сервера и подготавливает данные для листа
   function doLoad(showToast = true) {
+    if (!initialize()) return;
+
     Dictionaries.loadDictionariesFromSheet();
 
     const json = zmData.RequestForceFetch(['tag']);
@@ -628,6 +641,8 @@ const Categories = (function () {
 
   // Основная функция обновления категорий
   function doUpdate(mode) {
+    if (!initialize()) return;
+
     const lastRow = sheet.getLastRow();
     if (lastRow < 2) {
       Logger.log('Нет данных для обновления категорий');
@@ -658,6 +673,8 @@ const Categories = (function () {
   // ЗАМЕНА КАТЕГОРИЙ В ОПЕРАЦИЯХ
   //═══════════════════════════════════════════════════════════════════════════
   function showCategoryReplacementDialog() {
+    if (!initialize()) return;
+
     const categories = getSortedCategories();
     if (!categories.length) {
       SpreadsheetApp.getUi().alert('Ошибка', 'Не удалось загрузить категории', SpreadsheetApp.getUi().ButtonSet.OK);
@@ -692,6 +709,7 @@ const Categories = (function () {
   }
 
   function handleCategoryReplacement(oldId, newId) {
+    if (!initialize()) return;
     try {
       if (!oldId || !newId || oldId === newId) {
         throw new Error(oldId === newId ? 'Нельзя заменять одинаковые категории' : 'Не выбраны категории');
@@ -728,6 +746,8 @@ const Categories = (function () {
   }
 
   function addMenuItems(menu) {
+    if (!initialize()) return;
+
     try {
       HtmlService.createTemplateFromFile('CategoryReplacementDialog');
       menu.addSeparator().addItem('Заменить в операциях', 'Categories.showCategoryReplacementDialog');
