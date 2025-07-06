@@ -69,9 +69,12 @@ function createMenu() {
     }
 
     if (typeof Import !== 'undefined') {
+      const extraImportModules = [];      
+        if (typeof Tracking !== 'undefined' ) extraImportModules.push(Tracking);
+        if (typeof Validation !== 'undefined' ) extraImportModules.push(Validation);
       addSubMenu(mainMenu, 'Импорт', [
         { name: "Частичный импорт", func: "doUpdate" }
-      ], [Tracking, Validation], 'Import');
+      ], extraImportModules, 'Import');
     }
 
     if (typeof Categories !== 'undefined') {
@@ -116,96 +119,10 @@ function addSubMenu(mainMenu, menuName, items, extraModules = [], moduleName = n
     subMenu.addItem(item.name, functionPath);
   });
 
-  extraModules.forEach(extraModule => {
-    if (typeof extraModule !== 'undefined' && typeof extraModule.addMenuItems === 'function') {
-      extraModule.addMenuItems(subMenu);
-    }
-  });
+  extraModules.forEach(extraModule => extraModule.addMenuItems(subMenu));
 
   mainMenu.addSubMenu(subMenu);
 }
-
-/*
-// Конфигурация подменю
-function createMenu() {
-  const ui = SpreadsheetApp.getUi();
-  const menu = ui.createMenu('Дзен Мани')
-    .addItem('Полная Синхронизация', 'doFullSync')
-    .addItem('Обновить Словари', 'doUpdateDictionaries')
-    .addSeparator();
-
-  // Конфигурация подменю с жестко заданными именами модулей
-  const menuConfig = [
-    {
-      name: 'Экспорт',
-      module: Export,
-      items: [
-        ["Полный экспорт", "Export.doFullExport"],
-        ["Инкрементальный экспорт", "Export.doIncrementalExport"],
-        ["Подготовить лист изменений", "Export.prepareChangesSheet"],
-        ["Применить изменения", "Export.applyChangesToDataSheet"]
-      ]
-    },
-    {
-      name: 'Импорт',
-      module: Import,
-      items: [["Частичный импорт", "Import.doUpdate"]],
-      extra: [Tracking, Validation]
-    },
-    {
-      name: 'Настройка категорий',
-      module: Categories,
-      items: [
-        ["Загрузить", "Categories.doLoad"],
-        ["Сохранить", "Categories.doSave"],
-        ["Частично", "Categories.doPartial"],
-        ["Заменить", "Categories.doReplace"]
-      ],
-      extra: [Categories]
-    },
-    {
-      name: 'Настройка счетов',
-      module: Accounts,
-      items: [
-        ["Загрузить", "Accounts.doLoad"],
-        ["Сохранить", "Accounts.doSave"],
-        ["Частично", "Accounts.doPartial"],
-        ["Заменить", "Accounts.doReplace"]
-      ]
-    },
-    {
-      name: 'Настройка мест',
-      module: Merchants,
-      items: [
-        ["Загрузить", "Merchants.doLoad"],
-        ["Сохранить", "Merchants.doSave"],
-        ["Частично", "Merchants.doPartial"],
-        ["Заменить", "Merchants.doReplace"]
-      ]
-    }
-  ];
-
-  // Динамическое создание меню
-  menuConfig.forEach(config => {
-    if (config.module) {
-      const subMenu = ui.createMenu(config.name);
-      
-      // Добавляем основные пункты (имена функций уже содержат имя модуля)
-      config.items.forEach(([name, funcPath]) => {
-        subMenu.addItem(name, funcPath);
-      });
-      
-      // Добавляем дополнительные пункты
-      config.extra?.forEach(module => {
-        if (module?.addMenuItems) module.addMenuItems(subMenu);
-      });
-      
-      menu.addSubMenu(subMenu);
-    }
-  });
-
-  menu.addToUi();
-}*/
 
 //═══════════════════════════════════════════════════════════════════════════
 // СИНХРОНИЗАЦИЯ
