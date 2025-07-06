@@ -152,18 +152,18 @@ const Merchants = (function () {
         return null;
       }
 
-      let totalAffectedCount = 0;
+      let affectedCount = 0;
       const affectedTransactions = [];
 
       json.transaction.forEach(t => {
         if (!t.deleted && t.merchant && merchantIds.includes(t.merchant)) {
-          totalAffectedCount++;
+          affectedCount++;
           if (affectedTransactions.length < 20) affectedTransactions.push(t);
         }
       });
 
       return {
-        affcount: totalAffectedCount,
+        count: affectedCount,
         sample: affectedTransactions.map(t => {
           return `${t.date}${
             t.income 
@@ -401,12 +401,15 @@ const Merchants = (function () {
         // Проверяем транзакции с удаляемыми местами
         if (merchantsToDelete.length > 0) {
           const transactionsInfo = checkTransactionsWithMerchants(merchantsToDelete);
-          if (transactionsInfo?.affcount > 0) {
-            const { affcount, sample } = transactionsInfo;
+          if (transactionsInfo) {
             confirmLines.push(
-              `\nВНИМАНИЕ: Найдено ${affcount} транзакций с удаляемыми местами.`,
-              `Примеры: \n${sample.slice(0, 3).join(';\n')}${sample.length > 3 ? `\n...и ещё ${affcount - 3}` : ''}\n`,
-              `Поле будет очищено у ${affcount} транзакций.`
+              `\nВНИМАНИЕ: Найдено ${transactionsInfo.count} транзакций с удаляемыми местами.`,
+              `\nПримеры: \n${transactionsInfo.sample.slice(0, 3).join(';\n')}${
+                transactionsInfo.sample.length > 3
+                  ? `\n...и ещё ${count - 3}` 
+                  : ''
+              }`,
+              `\nПоле будет очищено у ${transactionsInfo.count} транзакций.`
             );
           }
         }
