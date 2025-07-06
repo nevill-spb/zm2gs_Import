@@ -12,6 +12,8 @@ const Accounts = (function () {
   // Специальный счет "Долги" (debt) — он не удаляется и не создаётся заново  
   const DEBT_ACCOUNT = { title: 'Долги', type: 'debt' };
 
+  const allowDuplicates = sheetHelper.GetCellValue(Settings.SHEETS.SETTINGS.NAME, Settings.SHEETS.SETTINGS.CELLS.ALLOW_DUPLICATES) === "ДА";
+
   //═══════════════════════════════════════════════════════════════════════════
   // ИНИЦИАЛИЗАЦИЯ
   //═══════════════════════════════════════════════════════════════════════════
@@ -439,14 +441,13 @@ const Accounts = (function () {
       throw new Error('Не заполнены обязательные поля (название, тип, валюта)');  
     }
     
-    // Проверка уникальности названия  
-    const isDuplicate = existingAccounts.some(a =>  
-      a.title === account.title &&  
-      a.id !== account.id &&  
-      !deleteRequests.some(del => del.id === a.id) // Исключаем счета, помеченные к удалению  
-    );  
-    if (isDuplicate) {  
-      throw new Error(`счет с названием "${account.title}" уже существует`);  
+    // Проверка уникальности названия
+    if (!allowDuplicates && existingAccounts.some(a => 
+      a.title === account.title && 
+      a.id !== account.id && 
+      !deleteRequests.some(del => del.id === a.id)
+    )) {
+      throw new Error(`Счет с названием "${account.title}" уже существует`);
     }
     
     // Валидация специального счета "Долги"  
