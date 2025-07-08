@@ -59,6 +59,68 @@ const Categories = (function () {
     return (r << 16) + (g << 8) + b;
   }
 
+  // Вспомогательная функция для выполнения с таймаутом
+  function withTimeout(func, timeoutMs) {
+    const start = new Date().getTime();
+    let result;
+    
+    try {
+      // Пытаемся выполнить функцию сразу
+      result = func();
+      
+      // Если функция выполнилась дольше таймаута - считаем это ошибкой
+      if (new Date().getTime() - start > timeoutMs) {
+        throw new Error('Превышено время ожидания');
+      }
+      
+      return result;
+    } catch (e) {
+      throw e;
+    }
+  }
+
+  function highlightDeletedTags() {
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const deletedTags = JSON.parse(scriptProperties.getProperty('deletedTags') || '[]');
+    if (deletedTags.length === 0) return;
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return;
+
+    const idColumn = fieldIndex.id + 1;
+    const idRange = sheet.getRange(2, idColumn, lastRow - 1, 1);
+    const ids = idRange.getValues();
+    
+    const textStyles = ids.map(row => {
+      const id = row[0];
+      return [deletedTags.includes(id) ? 'red' : null];
+    });
+
+    // Применяем стили текста ко всем столбцам
+    const columnsCount = Settings.CATEGORY_FIELDS.length;
+    for (let col = 1; col <= columnsCount; col++) {
+      sheet.getRange(2, col, lastRow - 1, 1).setFontColors(textStyles);
+    }
+  }
+
+  function cleanDeletedTags(serverTags) {
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const deletedTags = JSON.parse(scriptProperties.getProperty('deletedTags') || '[]');
+    if (deletedTags.length === 0) return;
+
+    // Создаем Set из актуальных ID с сервера
+    const serverTagIds = new Set(serverTags.map(tag => tag.id));
+
+    // Фильтруем deletedTags, оставляя только те, что есть на сервере
+    const updatedDeletedTags = deletedTags.filter(id => serverTagIds.has(id));
+
+    if (updatedDeletedTags.length === 0) {
+      scriptProperties.deleteProperty('deletedTags');
+    } else if (updatedDeletedTags.length !== deletedTags.length) {
+      scriptProperties.setProperty('deletedTags', JSON.stringify(updatedDeletedTags));
+    }
+  }
+
   //═══════════════════════════════════════════════════════════════════════════
   // ФУНКЦИИ РАБОТЫ С ДАННЫМИ
   //═══════════════════════════════════════════════════════════════════════════
@@ -141,6 +203,13 @@ const Categories = (function () {
     });
 
     tagsToDelete.push(...childTagsToDelete);
+
+    if (tagsToDelete.length > 0) {
+      const scriptProperties = PropertiesService.getScriptProperties();
+      const existingDeletedTags = JSON.parse(scriptProperties.getProperty('deletedTags') || '[]');
+      const updatedDeletedTags = [...new Set([...existingDeletedTags, ...tagsToDelete])];
+      scriptProperties.setProperty('deletedTags', JSON.stringify(updatedDeletedTags));
+    }
 
     return { ...stats, idMap, processedIds, tagsToDelete, deletedChildTagsCount: childTagsToDelete.length };
   }
@@ -259,7 +328,14 @@ const Categories = (function () {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
 
     if (data.length > 0) {
-      sheet.getRange(2, 1, data.length, data[0].length).setValues(data);
+      //sheet.getRange(2, 1, data.length, data[0].length).setValues(data);
+      const batchSize = 500;
+      for (let i = 0, batchNum = 1; i < data.length; i += batchSize, batchNum++) {
+        const batch = data.slice(i, i + batchSize);
+        sheet.getRange(i + 2, 1, batch.length, data[0].length)
+          .setValues(batch);
+        Utilities.sleep(100);
+      }
 
       const boolFields = ["showIncome", "showOutcome", "budgetIncome", "budgetOutcome", "required", "delete", "modify"];
 
@@ -292,32 +368,31 @@ const Categories = (function () {
       setColorBackgrounds(data);
     }
   }
-
+  
   // Очищает лишние строки после данных в чекбокс-колонках
   function clearExtraRows(dataLength, boolFields) {
-    const checkboxColumns = [];
-
-    for (const id of boolFields) {
-      const col = fieldIndex[id];
-      if (col !== undefined) {
-        checkboxColumns.push(col);
-      }
-    }
+    // Быстро собираем колонки с чекбоксами
+    const checkboxColumns = boolFields
+      .map(id => fieldIndex[id])
+      .filter(col => col !== undefined);
     
     if (!checkboxColumns.length || sheet.getMaxRows() <= dataLength + 2) return;
     
-    const range = sheet.getRange(
-      dataLength + 2,
-      Math.min(...checkboxColumns) + 1,
-      sheet.getMaxRows() - dataLength - 1,
-      Math.max(...checkboxColumns) - Math.min(...checkboxColumns) + 1
-    );
+    const minCol = Math.min(...checkboxColumns) + 1;
+    const maxCol = Math.max(...checkboxColumns) + 1;
+    const startRow = dataLength + 2;
+    const numRows = sheet.getMaxRows() - startRow + 1;
+    const numCols = maxCol - minCol + 1;
     
-    range.clearContent().clearDataValidations();
+    sheet.getRange(startRow, minCol, numRows, numCols)
+      .clearContent()
+      .clearDataValidations();
   }
 
   // Устанавливает цвета фона ячеек
   function setColorBackgrounds(data) {
+    const backgrounds = [];
+
     for (let i = 0; i < data.length; i++) {
       const colorNum = data[i][fieldIndex.color];
       if (colorNum && colorNum > 0) {
@@ -326,14 +401,16 @@ const Categories = (function () {
         const g = (num & 0xFF00) >>> 8;
         const r = (num & 0xFF0000) >>> 16;
         const hexColor = "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-        const cell = sheet.getRange(i + 2, fieldIndex.color + 1);
-        cell.setBackground(hexColor);
-        cell.setValue("");
+        backgrounds.push([hexColor]);
       } else {
-        sheet.getRange(i + 2, fieldIndex.color + 1).setBackground(null);
+        backgrounds.push([null]);
       }
     }
+    const colorRange = sheet.getRange(2, fieldIndex.color + 1, data.length, 1);
+    colorRange.setBackgrounds(backgrounds);
+    colorRange.setValue("");
   }
+  
 
   // Определяет строки для вставки чекбоксов
   function getRowsToModify(values, mode) {
@@ -385,14 +462,13 @@ const Categories = (function () {
   // ФУНКЦИИ СОЗДАНИЯ И ОБНОВЛЕНИЯ КАТЕГОРИЙ
   //═══════════════════════════════════════════════════════════════════════════
   // Создаёт объект категории из строки листа
-  function createTagFromRow(row, i, ts, existingIds, mode, idMap, tagsMap) {
+  function createTagFromRow(row, i, ts, existingIds, mode, idMap, tagsMap, colorHex) {
     const currentId = row[fieldIndex.id];
     const oldParentId = row[fieldIndex.parent] || null;
     const titleRaw = row[fieldIndex.title];
     const title = (titleRaw != null) ? String(titleRaw).trim() : '';
     if (!title) return null;
 
-    const colorHex = sheet.getRange(i + 2, fieldIndex.color + 1).getBackground();
     const user = Dictionaries.getUserId(row[fieldIndex.user]) || Settings.DefaultUserId;
     const shouldModify = parseBool(row[fieldIndex.modify]);
     const shouldDelete = parseBool(row[fieldIndex.delete]);
@@ -515,13 +591,20 @@ const Categories = (function () {
         updates.forEach(([id], i) => values[i][fieldIndex.id] = id);
       }
 
+      const colorHexes = sheet.getRange(2, fieldIndex.color + 1, values.length, 1).getBackgrounds();
+      const modifyFlags = values.map(row => parseBool(row[fieldIndex.modify]));
+      const deleteFlags = values.map(row => parseBool(row[fieldIndex.delete]));
+
       const deleteRequests = [];
       const modifyRequests = [];
       const deletedTitles = [];
 
       for (let i = 0; i < values.length; i++) {
+
+        if (!modifyFlags[i]) continue;
+
         const row = values[i];
-        const result = createTagFromRow(row, i, ts, existingIds, mode, idMap, tagsMap);
+        const result = createTagFromRow(row, i, ts, existingIds, mode, idMap, tagsMap, colorHexes[i][0]);
         if (!result) continue;
 
         if (result.deletion) {
@@ -570,40 +653,79 @@ const Categories = (function () {
           currentClientTimestamp: ts,
           serverTimestamp: ts
         };
-        if (modifyRequests.length > 0) data.tag = modifyRequests;
-        if (deleteRequests.length > 0) data.deletion = deleteRequests;
 
-        SpreadsheetApp.getActive().toast('Отправляем изменения на сервер...', 'Обновление');
-        const result = zmData.Request(data);
+        if (modifyRequests.length > 0) {
+          data.tag = modifyRequests;
+          SpreadsheetApp.getActive().toast('Отправляем изменения категорий...', 'Обновление');
+          const modifyResult = zmData.Request(data);
+          
+          if (typeof Logs !== 'undefined' && Logs.logApiCall) {
+            Logs.logApiCall(mode.logType, data, modifyResult);
+          }
 
-        if (typeof Logs !== 'undefined' && Logs.logApiCall) {
-          Logs.logApiCall(mode.logType, data, result);
+          if (!modifyResult || Object.keys(modifyResult).length === 0 || 
+            (Object.keys(modifyResult).length === 1 && 'serverTimestamp' in modifyResult)) {
+            throw new Error('Пустой ответ сервера при обновлении категорий');
+          }
         }
 
-        // Проверка ответа сервера 
-        if (!result || Object.keys(result).length === 0 || 
-          (Object.keys(result).length === 1 && 'serverTimestamp' in result)) {
-          throw new Error('Пустой ответ сервера при обновлении категорий');
+        if (deleteRequests.length > 0) {
+          const batchSize = 100;
+          const timeout = 10000; // 10 секунд таймаут
+          
+          for (let i = 0; i < deleteRequests.length; i += batchSize) {
+            const batch = deleteRequests.slice(i, i + batchSize);
+            const batchData = {
+              currentClientTimestamp: ts,
+              serverTimestamp: ts,
+              deletion: batch
+            };
+            
+            SpreadsheetApp.getActive().toast(`Отправляем удаление (${Math.min(i + batchSize, deleteRequests.length)}/${deleteRequests.length})...`, 'Обновление');
+            
+            try {
+              // Отправляем запрос с таймаутом
+              const deleteResult = withTimeout(() => zmData.Request(data), timeout);
+              
+              if (!deleteResult || !deleteResult.serverTimestamp) {
+                Logger.log(`Ошибка при удалении батча ${i}-${i + batchSize}: сервер не ответил`);
+                errors.push(`Ошибка при удалении батча ${i}-${i + batchSize}`);
+                continue;
+              }
+              
+              if (typeof Logs !== 'undefined' && Logs.logApiCall) {
+                Logs.logApiCall(`DELETE_TAGS`, batchData, deleteResult);
+              }
+              
+              Utilities.sleep(500); // Пауза между батчами
+            } catch (e) {
+              Logger.log(`Ошибка при удалении батча ${i}-${i + batchSize}: ${e}`);
+              errors.push(`Ошибка при удалении батча ${i}-${i + batchSize}`);
+            }
+          }
         }
 
-        // Сброс флагов modify
+        // Сброс флагов modify - оптимизированная версия
         const modifyColumn = fieldIndex.modify + 1;
         const modifyRange = sheet.getRange(2, modifyColumn, values.length, 1);
-        const modifyValues = modifyRange.getValues();
 
-        values.forEach((_, i) => {
-          modifyValues[i][0] = parseBool(values[i][fieldIndex.modify]) && 
-                    (modifyRequests.some(a => a.id === values[i][fieldIndex.id]) || 
-                    deleteRequests.some(d => d.id === values[i][fieldIndex.id]))
-                    ? false 
-                    : modifyValues[i][0];
-        });
+        // Создаем Set для быстрого поиска
+        const modifiedIds = new Set([
+          ...modifyRequests.map(a => a.id),
+          ...deleteRequests.map(d => d.id)
+        ]);
 
-        modifyRange.setValues(modifyValues);
+        // Готовим новые значения одним проходом
+        const newModifyValues = values.map(row => [
+          parseBool(row[fieldIndex.modify]) && modifiedIds.has(row[fieldIndex.id]) ? false : row[fieldIndex.modify]
+        ]);
 
-        // Если все счета обработаны без ошибок, перезагружает список счетов
-        if (!modifyValues.some(row => parseBool(row[0]))) {  
-          doLoad(false); // не показывать toast при перезагрузке после обновления
+        // Применяем изменения одним вызовом
+        modifyRange.setValues(newModifyValues);
+
+        // Проверяем нужно ли перезагружать
+        if (newModifyValues.every(row => !parseBool(row[0]))) {
+          doLoad(false);
         }
 
         // Подсчёт реальных изменений
@@ -616,6 +738,13 @@ const Categories = (function () {
       );
       } else {
         SpreadsheetApp.getActive().toast('Нет изменений для обработки', 'Информация');
+      }
+      // Логирование ошибок
+      if (errors.length > 0) {
+        const errorSheet = sheetHelper.Get(Settings.SHEETS.ERRORS);
+        errorSheet.insertRowsBefore(1, errors.length + 1);
+        errorSheet.getRange(1, 1).setValue(`Ошибки ${mode.description} категорий ` + new Date().toLocaleString());
+        errorSheet.getRange(2, 1, errors.length, 1).setValues(errors.map(e => [e]));
       }
     } catch (error) {
       Logger.log("Ошибка при обновлении категорий: " + error.toString());
@@ -638,6 +767,8 @@ const Categories = (function () {
       Logs.logApiCall("FETCH_TAGS", { tag: [] }, json);
     }
     prepareData(json, showToast);
+    cleanDeletedTags(json.tag || []);
+    highlightDeletedTags();
   }
 
   // Основная функция обновления категорий
