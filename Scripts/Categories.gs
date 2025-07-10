@@ -59,26 +59,6 @@ const Categories = (function () {
     return (r << 16) + (g << 8) + b;
   }
 
-  // Вспомогательная функция для выполнения с таймаутом
-  function withTimeout(func, timeoutMs) {
-    const start = new Date().getTime();
-    let result;
-    
-    try {
-      // Пытаемся выполнить функцию сразу
-      result = func();
-      
-      // Если функция выполнилась дольше таймаута - считаем это ошибкой
-      if (new Date().getTime() - start > timeoutMs) {
-        throw new Error('Превышено время ожидания');
-      }
-      
-      return result;
-    } catch (e) {
-      throw e;
-    }
-  }
-
   function highlightDeletedTags() {
     const scriptProperties = PropertiesService.getScriptProperties();
     const deletedTags = JSON.parse(scriptProperties.getProperty('deletedTags') || '[]');
@@ -670,38 +650,17 @@ const Categories = (function () {
         }
 
         if (deleteRequests.length > 0) {
-          const batchSize = 100;
-          const timeout = 10000; // 10 секунд таймаут
+          data.deletion = deleteRequests;
+          SpreadsheetApp.getActive().toast('Отправляем удаление категорий...', 'Обновление');
+          const deleteResult = zmData.Request(data);
           
-          for (let i = 0; i < deleteRequests.length; i += batchSize) {
-            const batch = deleteRequests.slice(i, i + batchSize);
-            const batchData = {
-              currentClientTimestamp: ts,
-              serverTimestamp: ts,
-              deletion: batch
-            };
-            
-            SpreadsheetApp.getActive().toast(`Отправляем удаление (${Math.min(i + batchSize, deleteRequests.length)}/${deleteRequests.length})...`, 'Обновление');
-            
-            try {
-              // Отправляем запрос с таймаутом
-              const deleteResult = withTimeout(() => zmData.Request(data), timeout);
-              
-              if (!deleteResult || !deleteResult.serverTimestamp) {
-                Logger.log(`Ошибка при удалении батча ${i}-${i + batchSize}: сервер не ответил`);
-                errors.push(`Ошибка при удалении батча ${i}-${i + batchSize}`);
-                continue;
-              }
-              
-              if (typeof Logs !== 'undefined' && Logs.logApiCall) {
-                Logs.logApiCall(`DELETE_TAGS`, batchData, deleteResult);
-              }
-              
-              Utilities.sleep(500); // Пауза между батчами
-            } catch (e) {
-              Logger.log(`Ошибка при удалении батча ${i}-${i + batchSize}: ${e}`);
-              errors.push(`Ошибка при удалении батча ${i}-${i + batchSize}`);
-            }
+          if (typeof Logs !== 'undefined' && Logs.logApiCall) {
+            Logs.logApiCall(mode.logType, data, deleteResult);
+          }
+
+          if (!deleteResult || Object.keys(deleteResult).length === 0 || 
+            (Object.keys(deleteResult).length === 1 && 'serverTimestamp' in deleteResult)) {
+            throw new Error('Пустой ответ сервера при удалении категорий');
           }
         }
 
