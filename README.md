@@ -5,7 +5,7 @@
 # Как использовать
 Возьмите готовый [шаблон настроек](https://docs.google.com/spreadsheets/d/1tSTjqCeHK3t6BUOEQUnOXYQhDoTdJQWTZmOCuL_A1v4/edit?usp=sharing):
 
-На листе Settings выставьте токен API в ячейку B1 (можно получить, пройдя по ссылке [https://zerro.app/token](https://zerro.app/token)), а также названия используемых листов.
+На листе Settings выставьте токен API в ячейку B1 (можно получить, перейдя по [ссылке](https://zerro.app/token)), а также названия используемых листов.
 
 Зайдите в меню Extensions -> Apps Script, и последовательно скопируйте нужные вам скрипты и HTML-файлы через Files (+ Add a file) -> Script/HTML. Рекомендую начать с Settings, Main, Logs, Dictionaries и Export - в таком порядке. Порядок имеет значение, **Settings должнен идти первым в списке, затем Main, затем остальные.**
 
