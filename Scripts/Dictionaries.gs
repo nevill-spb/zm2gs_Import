@@ -151,7 +151,7 @@ const Dictionaries = (function () {
     if (json.user) {
       users = {};
       json.user.forEach(item => {
-        if (item.id && item.login) users[item.id] = item.login;
+        if (item.id && (item.login || item.email)) users[item.id] = item.login || item.email;
       });    }
 
     if (json.tag) {
